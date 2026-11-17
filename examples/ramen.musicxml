@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="3.1">
+<work><work-title>ラーメンのうた</work-title></work>
+<part-list><score-part id="P1"><part-name>Vocal</part-name></score-part></part-list>
+<part id="P1">
+<measure number="1">
+<attributes><divisions>24</divisions><key><fifths>0</fifths><mode>major</mode></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+<direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>96</per-minute></metronome></direction-type><sound tempo="96"/></direction>
+<harmony><root><root-step>F</root-step></root><kind text="">major</kind></harmony>
+<note><rest/><duration>96</duration><type>whole</type></note>
+</measure>
+<measure number="2">
+<harmony><root><root-step>G</root-step></root><kind text="">major</kind></harmony>
+<note><rest/><duration>96</duration><type>whole</type></note>
+</measure>
+<measure number="3">
+<harmony><root><root-step>C</root-step></root><kind text="">major</kind></harmony>
+<note><rest/><duration>96</duration><type>whole</type></note>
+</measure>
+<measure number="4">
+<harmony><root><root-step>C</root-step></root><kind text="">major</kind></harmony>
+<note><rest/><duration>96</duration><type>whole</type></note>
+</measure>
+<measure number="5">
+<harmony><root><root-step>C</root-step></root><kind text="">major</kind></harmony>
+<note><pitch><step>C</step><octave>4</octave></pitch><duration>12</duration><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>ラ</text></lyric></note>
+<note><pitch><step>C</step><octave>4</octave></pitch><duration>12</duration><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>ー</text></lyric></note>
+<note><pitch><step>C</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>メ</text></lyric></note>
+<note><pitch><step>G</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>ン</text></lyric></note>
+<note><pitch><step>G</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>た</text></lyric></note>
+</measure>
+<measure number="6">
+<harmony><root><root-step>F</root-step></root><kind text="">major</kind></harmony>
+<note><pitch><step>A</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>べ</text></lyric></note>
+<note><pitch><step>A</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>た</text></lyric></note>
+<harmony><root><root-step>C</root-step></root><kind text="">major</kind></harmony>
+<note><pitch><step>G</step><octave>4</octave></pitch><duration>48</duration><type>half</type><lyric number="1"><syllabic>single</syllabic><text>い</text></lyric></note>
+</measure>
+<measure number="7">
+<harmony><root><root-step>F</root-step></root><kind text="">major</kind></harmony>
+<note><pitch><step>F</step><octave>4</octave></pitch><duration>12</duration><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>チャ</text></lyric></note>
+<note><pitch><step>F</step><octave>4</octave></pitch><duration>12</duration><type>eighth</type><lyric number="1"><syllabic>single</syllabic><text>ー</text></lyric></note>
+<note><pitch><step>F</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>シュ</text></lyric></note>
+<harmony><root><root-step>C</root-step></root><kind text="">major</kind></harmony>
+<note><pitch><step>E</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>ー</text></lyric></note>
+<note><pitch><step>E</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>お</text></lyric></note>
+</measure>
+<measure number="8">
+<harmony><root><root-step>G</root-step></root><kind text="">major</kind></harmony>
+<note><pitch><step>D</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>お</text></lyric></note>
+<note><pitch><step>D</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>め</text></lyric></note>
+<harmony><root><root-step>C</root-step></root><kind text="">major</kind></harmony>
+<note><pitch><step>C</step><octave>4</octave></pitch><duration>48</duration><type>half</type><lyric number="1"><syllabic>single</syllabic><text>で</text></lyric></note>
+</measure>
+<measure number="9">
+<harmony><root><root-step>C</root-step></root><kind text="">major</kind></harmony>
+<note><pitch><step>G</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>あ</text></lyric></note>
+<note><pitch><step>G</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>つ</text></lyric></note>
+<harmony><root><root-step>F</root-step></root><kind text="">major</kind></harmony>
+<note><pitch><step>F</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>い</text></lyric></note>
+<note><pitch><step>F</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>ス</text></lyric></note>
+</measure>
+<measure number="10">
+<harmony><root><root-step>C</root-step></root><kind text="">major</kind></harmony>
+<note><pitch><step>E</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>ー</text></lyric></note>
+<note><pitch><step>E</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>プ</text></lyric></note>
+<harmony><root><root-step>G</root-step></root><kind text="">major</kind></harmony>
+<note><pitch><step>D</step><octave>4</octave></pitch><duration>48</duration><type>half</type><lyric number="1"><syllabic>single</syllabic><text>を</text></lyric></note>
+</measure>
+<measure number="11">
+<harmony><root><root-step>C</root-step></root><kind text="">major</kind></harmony>
+<note><pitch><step>G</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>さ</text></lyric></note>
+<note><pitch><step>G</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>い</text></lyric></note>
+<harmony><root><root-step>F</root-step></root><kind text="">major</kind></harmony>
+<note><pitch><step>F</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>ご</text></lyric></note>
+<note><pitch><step>F</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>ま</text></lyric></note>
+</measure>
+<measure number="12">
+<harmony><root><root-step>C</root-step></root><kind text="">major</kind></harmony>
+<note><pitch><step>E</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>で</text></lyric></note>
+<note><pitch><step>E</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>の</text></lyric></note>
+<harmony><root><root-step>G</root-step></root><kind text="">major</kind></harmony>
+<note><pitch><step>D</step><octave>4</octave></pitch><duration>48</duration><type>half</type><lyric number="1"><syllabic>single</syllabic><text>む</text></lyric></note>
+</measure>
+<measure number="13">
+<harmony><root><root-step>C</root-step></root><kind text="">major</kind></harmony>
+<note><pitch><step>C</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>お</text></lyric></note>
+<note><pitch><step>C</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>な</text></lyric></note>
+<note><pitch><step>G</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>か</text></lyric></note>
+<note><pitch><step>G</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>い</text></lyric></note>
+</measure>
+<measure number="14">
+<harmony><root><root-step>F</root-step></root><kind text="">major</kind></harmony>
+<note><pitch><step>A</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>っ</text></lyric></note>
+<note><pitch><step>A</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>ぱ</text></lyric></note>
+<harmony><root><root-step>C</root-step></root><kind text="">major</kind></harmony>
+<note><pitch><step>G</step><octave>4</octave></pitch><duration>48</duration><type>half</type><lyric number="1"><syllabic>single</syllabic><text>い</text></lyric></note>
+</measure>
+<measure number="15">
+<harmony><root><root-step>F</root-step></root><kind text="">major</kind></harmony>
+<note><pitch><step>F</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>ご</text></lyric></note>
+<note><pitch><step>F</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>ち</text></lyric></note>
+<harmony><root><root-step>C</root-step></root><kind text="">major</kind></harmony>
+<note><pitch><step>E</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>そ</text></lyric></note>
+<note><pitch><step>E</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>う</text></lyric></note>
+</measure>
+<measure number="16">
+<harmony><root><root-step>G</root-step></root><kind text="">major</kind></harmony>
+<note><pitch><step>D</step><octave>4</octave></pitch><duration>48</duration><type>half</type><lyric number="1"><syllabic>single</syllabic><text>さ</text></lyric></note>
+<harmony><root><root-step>C</root-step></root><kind text="">major</kind></harmony>
+<note><pitch><step>C</step><octave>4</octave></pitch><duration>48</duration><type>half</type><lyric number="1"><syllabic>single</syllabic><text>ま</text></lyric></note>
+</measure>
+<measure number="17">
+<harmony><root><root-step>F</root-step></root><kind text="">major</kind></harmony>
+<note><rest/><duration>96</duration><type>whole</type></note>
+<harmony><root><root-step>G</root-step></root><kind text="">major</kind></harmony>
+</measure>
+<measure number="18">
+<harmony><root><root-step>C</root-step></root><kind text="">major</kind></harmony>
+<note><rest/><duration>96</duration><type>whole</type></note>
+</measure>
+</part></score-partwise>

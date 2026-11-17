@@ -1,0 +1,89 @@
+import unittest
+from fractions import Fraction as F
+
+from musicai.composer import compose
+from musicai.kaeuta import fit_lyrics
+from musicai.lyrics import LyricError, count_mora, split_mora
+from musicai.song import load_song, parse_melody, song_from_dict
+from musicai.theory import parse_key, parse_pitch, progression_to_chords
+
+
+class TheoryTest(unittest.TestCase):
+    def test_pitch(self):
+        self.assertEqual(parse_pitch("C4"), 60)
+        self.assertEqual(parse_pitch("A4"), 69)
+        self.assertEqual(parse_pitch("Bb3"), 58)
+
+    def test_progressions(self):
+        self.assertEqual(progression_to_chords("王道進行", parse_key("C major")), ["F", "G", "Em", "Am"])
+        self.assertEqual(progression_to_chords("I V vi IV", parse_key("G")), ["G", "D", "Em", "C"])
+        self.assertEqual(progression_to_chords("IVmaj7 III7 vi7", parse_key("C")), ["Fmaj7", "E7", "Am7"])
+        # マイナーキーで進行名 → 平行調基準
+        self.assertEqual(progression_to_chords("小室進行", parse_key("A minor")), ["Am", "F", "G", "C"])
+
+
+class LyricsTest(unittest.TestCase):
+    def test_mora(self):
+        self.assertEqual([s.text for s in split_mora("きょうはがっこう")], ["きょ", "う", "は", "が", "っ", "こ", "う"])
+        self.assertEqual(count_mora("ラーメン"), 4)
+        self.assertEqual(count_mora("{空|そら}へ"), 3)
+        self.assertEqual([s.text for s in split_mora("twin-kle star")], ["twin", "kle", "star"])
+
+    def test_phrases_and_kanji(self):
+        syl = split_mora("あい / うえお\nか")
+        self.assertEqual([s.phrase for s in syl], [0, 0, 1, 1, 1, 2])
+        with self.assertRaises(LyricError):
+            split_mora("空")
+
+    def test_vowel(self):
+        self.assertEqual([s.vowel for s in split_mora("きょうん")], ["o", "u", "n"])
+
+
+class KaeutaTest(unittest.TestCase):
+    MEL = "C4:1 C4 G4 G4 | A4 A4 G4:2 | F4:1 F4 E4 E4 | D4 D4 C4:2"
+
+    def _sung(self, notes):
+        return [n for n in notes if not n.is_rest and not n.melisma]
+
+    def test_more_mora_splits(self):
+        notes, _ = parse_melody(self.MEL, 4)
+        out, rep = fit_lyrics(notes, "らーめんたべたい / ちゃーしゅーおおめで")
+        self.assertEqual(len(self._sung(out)), 16)
+        self.assertEqual(sum((n.dur for n in out), F(0)), 16)
+
+    def test_fewer_mora_ties_or_melisma(self):
+        notes, _ = parse_melody(self.MEL, 4)
+        out, _ = fit_lyrics(notes, "あいう / えお")
+        self.assertEqual(len(self._sung(out)), 5)
+        self.assertEqual(sum((n.dur for n in out), F(0)), 16)
+
+
+class SongTest(unittest.TestCase):
+    def test_example_songs_load_clean(self):
+        for f in ["songs/hoshi.yaml", "songs/hajimari.yaml"]:
+            song = load_song(f)
+            self.assertEqual([w for s in song.sections.values() for w in s.warnings], [], f)
+
+    def test_compose_fits_lyrics(self):
+        spec = {"key": "D major", "tempo": 110, "seed": 1, "structure": ["v", "c"],
+                "sections": {"v": {"progression": "カノン進行", "lyrics": "あいうえおかきくけこ / さしすせそ"},
+                             "c": {"progression": "王道進行", "energy": "high",
+                                   "lyrics": "たちつてと / なにぬねの / はひふへほまみむめも"}}}
+        song = song_from_dict(compose(spec))
+        for sec in song.sections.values():
+            self.assertEqual(sec.warnings, [])
+            self.assertEqual(sec.length % 4, 0)
+        # フレーズ末の音はその時のコードの構成音
+        from musicai.theory import parse_chord
+        sec = song.sections["c"]
+        t = F(0)
+        for i, n in enumerate(sec.notes):
+            nxt_rest = i + 1 == len(sec.notes) or sec.notes[i + 1].is_rest
+            if not n.is_rest and nxt_rest:
+                ch = next(c for s, d, c in sec.chords if s <= t < s + d)
+                self.assertIn(n.pitch % 12, parse_chord(ch).pcs)
+            t += n.dur
+
+
+if __name__ == "__main__":
+    unittest.main()

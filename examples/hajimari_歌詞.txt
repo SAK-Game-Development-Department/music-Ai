@@ -1,0 +1,43 @@
+『はじまりのうた』
+key: G major / tempo: 124
+
+【intro】  (C D Bm Em)
+  （インスト）
+
+【verse】  (G D Em Bm C)
+  まどをあけたら
+  かぜがはこんだ
+  新しいきせつの
+  においがしたよ
+
+【prechorus】  (Em C G D)
+  ふあんもあるけど
+  こころがはしりだす
+
+【chorus】  (C D Bm Em)
+  はじまりのうたを
+  今うたおう
+  空までとどけ
+  ぼくらのこえ
+
+【interlude】  (C D Bm Em)
+  （インスト）
+
+【verse2】  (G D Em Bm C)
+  きのうのぼくに
+  さよならをして
+  まだしらないみちを
+  あるいてゆくよ
+
+【prechorus】  (Em C G D)
+  ふあんもあるけど
+  こころがはしりだす
+
+【chorus】  (C D Bm Em)
+  はじまりのうたを
+  今うたおう
+  空までとどけ
+  ぼくらのこえ
+
+【outro】  (C D G)
+  （インスト）

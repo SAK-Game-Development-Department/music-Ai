@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>music-Ai</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">🎵 music-Ai <small>AI と作る作曲・替え歌ソフト</small></div>
+  <nav class="tabs">
+    <button data-tab="home" class="active">🏠 ホーム</button>
+    <button data-tab="compose">🎼 作曲</button>
+    <button data-tab="kaeuta">🎤 替え歌</button>
+    <button data-tab="editor">🎹 編集・再生</button>
+    <button data-tab="learn">📖 音楽のきほん</button>
+  </nav>
+</header>
+
+<main>
+<!-- ================= ホーム ================= -->
+<section id="tab-home" class="tab active">
+  <div class="hero">
+    <h1>何を作りますか？</h1>
+    <div class="cards">
+      <button class="bigcard" data-goto="compose">
+        <span class="emoji">🎼</span><b>0 から作曲する</b>
+        <span>歌詞とコード進行を選ぶだけで、メロディと伴奏を自動で作ります</span>
+      </button>
+      <button class="bigcard" data-goto="kaeuta">
+        <span class="emoji">🎤</span><b>替え歌を作る</b>
+        <span>メロディはそのまま、歌詞だけ差し替え。文字数のズレは自動で調整</span>
+      </button>
+      <button class="bigcard" data-goto="editor">
+        <span class="emoji">🎹</span><b>保存した曲を聴く・直す</b>
+        <span>ピアノロールで確認、カラオケ版や楽譜・MIDI の書き出しも</span>
+      </button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>保存した曲</h2>
+    <ul id="home-songs" class="songlist"></ul>
+  </div>
+</section>
+
+<!-- ================= 作曲 ================= -->
+<section id="tab-compose" class="tab">
+  <div class="panel">
+    <h2>① 曲の基本</h2>
+    <div class="grid4">
+      <label>タイトル<input id="c-title" value="はじめての曲"></label>
+      <label>キー（調）
+        <div class="row">
+          <select id="c-tonic"></select>
+          <select id="c-mode"><option value="major">メジャー（明るい）</option><option value="minor">マイナー（暗い・切ない）</option></select>
+        </div>
+      </label>
+      <label>テンポ <output id="c-tempo-out">120</output> BPM
+        <input id="c-tempo" type="range" min="60" max="180" value="120">
+      </label>
+      <label>アレンジ
+        <select id="c-style">
+          <option value="pop">ポップ</option><option value="ballad">バラード</option>
+          <option value="rock">ロック</option><option value="simple">シンプル（ピアノだけ）</option>
+        </select>
+      </label>
+    </div>
+    <div class="row gap">
+      <span class="muted">テンプレート:</span>
+      <button class="chip" data-template="jpop">J-POP 定番（A→B→サビ ×2）</button>
+      <button class="chip" data-template="short">ショート（A→サビ）</button>
+      <button class="chip" data-template="ballad">バラード</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>② 構成と歌詞 <small class="muted">上から順に演奏されます</small></h2>
+    <p class="hint">歌詞は <b>1 行 = 1 フレーズ（息継ぎまで）</b>。ひらがな推奨、漢字は <code>{空|そら}</code> のように読みを書きます。
+      対になる行の文字数（モーラ数）を揃えると覚えやすい曲になります。</p>
+    <div id="c-sections"></div>
+    <button id="c-add" class="ghost">＋ パートを追加</button>
+  </div>
+
+  <div class="panel actions">
+    <label class="inline">メロディの案 #<input id="c-seed" type="number" value="1" min="0" style="width:5em"></label>
+    <button id="c-dice" class="ghost" title="別の案">🎲 別の案</button>
+    <button id="c-go" class="primary big">🎵 作曲する</button>
+  </div>
+</section>
+
+<!-- ================= 替え歌 ================= -->
+<section id="tab-kaeuta" class="tab">
+  <div class="panel">
+    <h2>① 元の曲をえらぶ</h2>
+    <div class="row gap">
+      <select id="k-song"></select>
+      <label class="inline">新しいタイトル <input id="k-title" placeholder="（替え歌）"></label>
+    </div>
+    <p class="hint">元の曲は「編集・再生」タブで YAML を貼り付けて保存すると、ここに出てきます。
+      既存のヒット曲の替え歌を <b>公開</b> する場合は権利に注意してください。</p>
+  </div>
+  <div class="panel">
+    <h2>② 新しい歌詞を書く</h2>
+    <p class="hint">元の歌詞と同じように <b>/ か改行でフレーズを区切る</b> と、息継ぎの位置が保たれます。
+      文字数が違っても大丈夫：多ければ音符を割り、少なければ音を伸ばして合わせます。</p>
+    <div id="k-sections"></div>
+  </div>
+  <div class="panel actions">
+    <button id="k-go" class="primary big">🎤 替え歌を作る</button>
+  </div>
+  <div class="panel" id="k-report-panel" hidden>
+    <h2>調整レポート</h2>
+    <pre id="k-report"></pre>
+  </div>
+</section>
+
+<!-- ================= 編集・再生 ================= -->
+<section id="tab-editor" class="tab">
+  <div class="panel">
+    <div class="row gap wrap">
+      <select id="e-song"></select>
+      <span id="e-meta" class="muted"></span>
+      <span class="spacer"></span>
+      <button id="e-delete" class="ghost danger">削除</button>
+    </div>
+  </div>
+
+  <div class="panel player">
+    <div class="row gap wrap">
+      <button id="e-play" class="primary">▶ 音を作って再生</button>
+      <label class="inline"><input type="checkbox" id="e-karaoke"> カラオケ（ボーカルなし）</label>
+      <label class="inline">テンポ <input id="e-tempo" type="number" min="40" max="240" style="width:5em"></label>
+      <label class="inline">アレンジ
+        <select id="e-style"><option value="pop">ポップ</option><option value="ballad">バラード</option><option value="rock">ロック</option><option value="simple">シンプル</option></select>
+      </label>
+      <span class="spacer"></span>
+      <span id="e-downloads" class="downloads"></span>
+    </div>
+    <audio id="e-audio" controls></audio>
+    <div class="roll-wrap"><canvas id="e-roll" height="320"></canvas></div>
+    <div id="e-lyrics-now" class="lyrics-now"></div>
+  </div>
+
+  <div class="panel">
+    <h2>パート一覧</h2>
+    <div id="e-sections" class="secgrid"></div>
+    <div id="e-warn" class="warn" hidden></div>
+  </div>
+
+  <details class="panel">
+    <summary><b>✏️ 曲データを直接編集（上級）</b> <span class="muted">— Claude に「サビを高くして」等と頼むとここを書き換えてくれます</span></summary>
+    <p class="hint">melody: <code>音名:拍数</code>（C4 = 真ん中のド、<code>r</code> = 休符、<code>~</code> = 前の文字を伸ばす、<code>|</code> = 小節線）。
+      chords: <code>C | F G | Am</code>（| で小節区切り）。</p>
+    <textarea id="e-yaml" spellcheck="false"></textarea>
+    <div class="row gap">
+      <button id="e-check" class="ghost">チェック</button>
+      <button id="e-save" class="primary">保存</button>
+      <label class="inline">名前を付けて保存 <input id="e-saveas" placeholder="新しい名前"></label>
+      <button id="e-saveas-btn" class="ghost">別名で保存</button>
+    </div>
+  </details>
+</section>
+
+<!-- ================= 音楽のきほん ================= -->
+<section id="tab-learn" class="tab">
+  <div class="panel">
+    <h2>定番コード進行</h2>
+    <div class="row gap">キー: <select id="l-key"></select></div>
+    <table class="prog"><thead><tr><th>名前</th><th>ディグリー</th><th>コード</th><th>印象</th></tr></thead><tbody id="l-prog"></tbody></table>
+  </div>
+  <div class="panel learn">
+    <h2>曲づくりのポイント</h2>
+    <div class="cols">
+      <div><h3>構成</h3><p>イントロ → Aメロ（低め・静か）→ Bメロ（盛り上げ準備）→ <b>サビ（一番高く・全部入り）</b> → … → アウトロ。各パートは 4 か 8 小節。</p></div>
+      <div><h3>メロディ</h3><p>強拍にはコードの音、弱拍は隣の音でつなぐ。フレーズは山なり、終わりは長い音 + 息継ぎ。同じリズムを 2 回繰り返すと覚えやすい。</p></div>
+      <div><h3>歌詞（モーラ）</h3><p>日本語は 1 モーラ = 1 音。「きょう」= 2、「がっこう」= 4、「ー」「ん」「っ」も 1。1 行 5〜12 モーラが歌いやすい。</p></div>
+      <div><h3>替え歌のコツ</h3><p>フレーズの区切りを元歌と揃える。伸ばす音には「あ・お」。言葉のアクセントとメロディの上下を合わせると聞き取りやすい。</p></div>
+      <div><h3>AI に頼む</h3><p>「サビの最後をもっと高く」「Aメロを跳ねたリズムに」「2 番の歌詞を同じ文字数で」など、Claude に話しかけると曲データを直してくれます。</p></div>
+      <div><h3>本物の歌声に</h3><p>書き出した MusicXML を NEUTRINO・Synthesizer V などの歌声合成ソフトに読み込むと、歌詞をはっきり歌わせられます。</p></div>
+    </div>
+  </div>
+</section>
+</main>
+
+<div id="busy" hidden><div class="spinner"></div><div id="busy-msg">処理中…</div></div>
+<div id="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
