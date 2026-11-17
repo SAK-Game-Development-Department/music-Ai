@@ -1,0 +1,558 @@
+"use strict";
+// ====================================================================
+//  music-Ai フロントエンド（素の JavaScript、外部ライブラリなし）
+// ====================================================================
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const h = (tag, attrs = {}, ...kids) => {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") el.className = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (k === "html") el.innerHTML = v;
+    else if (v !== undefined && v !== null && v !== false) el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of kids.flat()) if (c !== null && c !== undefined) el.append(c.nodeType ? c : String(c));
+  return el;
+};
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const debounce = (fn, ms = 350) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+
+async function api(path, body) {
+  const opt = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  const r = await fetch(path, opt);
+  const j = await r.json().catch(() => ({ error: "サーバーと通信できません（アプリのウィンドウが閉じていませんか？）" }));
+  if (!r.ok || j.error && !("phrases" in j)) throw new Error(j.error || r.statusText);
+  return j;
+}
+function toast(msg, isError = false) {
+  const t = $("#toast");
+  t.textContent = msg; t.className = isError ? "error" : ""; t.hidden = false;
+  clearTimeout(toast._t); toast._t = setTimeout(() => (t.hidden = true), isError ? 7000 : 3000);
+}
+async function busy(msg, fn) {
+  $("#busy-msg").textContent = msg; $("#busy").hidden = false;
+  try { return await fn(); } catch (e) { toast(e.message, true); throw e; } finally { $("#busy").hidden = true; }
+}
+
+// ---------------- タブ ----------------
+function showTab(name, opts = {}) {
+  $$(".tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+  $$(".tab").forEach((t) => t.classList.toggle("active", t.id === "tab-" + name));
+  if (name === "home") refreshSongs();
+  if (name === "kaeuta") refreshSongs().then(() => kLoad());
+  if (name === "editor" && !opts.noload) refreshSongs().then(() => { if (!E.cur && $("#e-song").value) eLoad($("#e-song").value); });
+  window.scrollTo(0, 0);
+}
+$$(".tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+$$("[data-goto]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.goto)));
+
+// ---------------- 曲リスト ----------------
+let SONGS = [];
+async function refreshSongs() {
+  SONGS = (await api("/api/songs")).songs;
+  const ul = $("#home-songs");
+  ul.replaceChildren(...SONGS.map((s) => h("li", {}, h("button", { onclick: () => openInEditor(s.name) }, s.title, h("span", { class: "sub" }, s.name + ".yaml")))));
+  if (!SONGS.length) ul.append(h("li", { class: "muted" }, "まだありません"));
+  for (const sel of [$("#e-song"), $("#k-song")]) {
+    const v = sel.id === "e-song" && E.cur ? E.cur.name : sel.value;
+    sel.replaceChildren(...SONGS.map((s) => h("option", { value: s.name }, `${s.title}（${s.name}）`)));
+    if (v && SONGS.some((s) => s.name === v)) sel.value = v;
+  }
+}
+
+// ---------------- 共通 ----------------
+const TONICS = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
+const COLORS = { low: "#4a9fe0", mid: "#f0a03c", high: "#ff5d8f", inst: "#9b8fd6" };
+let PROGS = [];
+
+async function loadProgressions() {
+  PROGS = (await api("/api/progressions?key=C")).items;
+}
+
+async function moraOf(text) {
+  if (!text.trim()) return { phrases: [] };
+  return api("/api/mora", { text });
+}
+
+// ====================================================================
+//  作曲
+// ====================================================================
+const PART_TYPES = {
+  "イントロ": { energy: "low", prog: "王道進行", bars: 4 },
+  "Aメロ": { energy: "low", prog: "カノン進行" },
+  "Bメロ": { energy: "mid", prog: "Bメロ定番" },
+  "サビ": { energy: "high", prog: "王道進行" },
+  "間奏": { energy: "mid", prog: "王道進行", bars: 4 },
+  "Cメロ": { energy: "mid", prog: "小室進行" },
+  "アウトロ": { energy: "low", prog: "IV V I I", bars: 4 },
+};
+const TEMPLATES = {
+  jpop: {
+    tempo: 124, style: "pop", key: ["G", "major"], parts: [
+      ["イントロ"],
+      ["Aメロ", "new", "", "まどをあけたら\nかぜがはこんだ\n{新|あたら}しいきせつの\nにおいがしたよ"],
+      ["Bメロ", "new", "", "ふあんもあるけど\nこころがはしりだす"],
+      ["サビ", "new", "", "はじまりのうたを\n{今|いま}うたおう\n{空|そら}までとどけ\nぼくらのこえ"],
+      ["間奏"],
+      ["Aメロ2", "second", "Aメロ", "きのうのぼくに\nさよならをして\nまだしらないみちを\nあるいてゆくよ"],
+      ["Bメロ", "repeat", "Bメロ"],
+      ["サビ", "repeat", "サビ"],
+      ["アウトロ"],
+    ],
+  },
+  short: {
+    tempo: 132, style: "pop", key: ["C", "major"], parts: [
+      ["イントロ", "new", "", "", 2],
+      ["Aメロ", "new", "", "ここにうたを\nかいてみよう"],
+      ["サビ", "new", "", "ららら きみと\nうたおうよ"],
+      ["アウトロ", "new", "", "", 2],
+    ],
+  },
+  ballad: {
+    tempo: 76, style: "ballad", key: ["D", "major"], parts: [
+      ["イントロ"],
+      ["Aメロ", "new", "", "しずかなよるに\nきみをおもう\nとおいまちの\nあかりのなか"],
+      ["サビ", "new", "", "あいたいよ\nいますぐに\nこのこえが\nとどくまで"],
+      ["アウトロ"],
+    ],
+  },
+};
+
+const C = { parts: [] };
+let partSeq = 0;
+
+function newPart(type, kind = "new", ref = "", lyrics = "", bars) {
+  const base = PART_TYPES[type.replace(/\d+$/, "")] || PART_TYPES["Aメロ"];
+  return { uid: ++partSeq, id: type, kind, ref, prog: base.prog, custom: "", energy: base.energy, lyrics,
+           bars: bars || base.bars || 4 };
+}
+
+function applyTemplate(name) {
+  const t = TEMPLATES[name];
+  $("#c-tempo").value = t.tempo; $("#c-tempo-out").textContent = t.tempo;
+  $("#c-style").value = t.style; $("#c-tonic").value = t.key[0]; $("#c-mode").value = t.key[1];
+  C.parts = t.parts.map(([type, kind, ref, lyr, bars]) => newPart(type, kind || "new", ref || "", lyr || "", bars));
+  renderParts();
+}
+
+function keyStr() { return `${$("#c-tonic").value} ${$("#c-mode").value}`; }
+
+function definedBefore(i) {
+  return C.parts.slice(0, i).filter((p) => p.kind !== "repeat").map((p) => p.id);
+}
+
+function renderParts() {
+  const box = $("#c-sections");
+  box.replaceChildren(...C.parts.map((p, i) => partCard(p, i)));
+}
+
+function partCard(p, i) {
+  const color = p.kind === "repeat" ? "#aaa" : (p.lyrics.trim() || p.kind === "second" ? COLORS[p.energy] : COLORS.inst);
+  const card = h("div", { class: "sec-card", style: `--c:${color}` });
+  const refs = definedBefore(i);
+  const nameIn = h("input", { class: "name", value: p.id, title: "パートの名前",
+    onchange: (e) => { const old = p.id; p.id = e.target.value.trim() || old;
+      C.parts.forEach((q) => { if (q.ref === old) q.ref = p.id; }); renderParts(); } });
+  const kindSel = h("select", { onchange: (e) => { p.kind = e.target.value; if (p.kind !== "new" && !p.ref) p.ref = refs[0] || ""; renderParts(); } },
+    h("option", { value: "new" }, "新しいメロディを作る"),
+    refs.length ? h("option", { value: "second" }, "前のパートと同じメロディ・歌詞だけ変える（2番）") : null,
+    refs.length ? h("option", { value: "repeat" }, "前のパートをもう一度（そのまま）") : null);
+  kindSel.value = p.kind;
+  const refSel = p.kind !== "new" ? h("select", { onchange: (e) => { p.ref = e.target.value; if (p.kind === "repeat") p.id = p.ref; renderParts(); } },
+    ...refs.map((r) => h("option", { value: r }, r))) : null;
+  if (refSel) refSel.value = p.ref;
+
+  const head = h("div", { class: "sec-head" },
+    h("span", { class: "num" }, i + 1),
+    p.kind === "repeat" ? h("b", {}, p.ref) : nameIn,
+    kindSel, refSel,
+    h("span", { class: "spacer" }),
+    h("button", { class: "iconbtn ghost", title: "上へ", onclick: () => { if (i > 0) { [C.parts[i - 1], C.parts[i]] = [C.parts[i], C.parts[i - 1]]; renderParts(); } } }, "↑"),
+    h("button", { class: "iconbtn ghost", title: "下へ", onclick: () => { if (i < C.parts.length - 1) { [C.parts[i + 1], C.parts[i]] = [C.parts[i], C.parts[i + 1]]; renderParts(); } } }, "↓"),
+    h("button", { class: "iconbtn ghost danger", title: "削除", onclick: () => { C.parts.splice(i, 1); renderParts(); } }, "✕"));
+  card.append(head);
+  if (p.kind === "repeat") {
+    card.append(h("div", { class: "hint" }, `「${p.ref}」をメロディも歌詞もそのままもう一度演奏します`));
+    return card;
+  }
+
+  // 左: 進行・盛り上がり
+  const left = h("div");
+  if (p.kind === "new") {
+    const progSel = h("select", { onchange: (e) => { p.prog = e.target.value; updateChords(); renderParts(); } },
+      ...PROGS.map((g) => h("option", { value: g.name }, `${g.name}（${g.desc}）`)),
+      h("option", { value: "__custom" }, "自分で入力（例: I V vi IV / C G Am F）"));
+    const isCustom = !PROGS.some((g) => g.name === p.prog);
+    progSel.value = isCustom ? "__custom" : p.prog;
+    left.append(h("label", {}, "コード進行", progSel));
+    if (isCustom || p.prog === "__custom") {
+      left.append(h("input", { value: p.custom || (p.prog !== "__custom" ? p.prog : ""), placeholder: "I V vi IV",
+        oninput: debounce((e) => { p.custom = e.target.value; updateChords(); }) }));
+    }
+    const prev = h("div", { class: "chords-preview" });
+    left.append(prev);
+    const updateChords = async () => {
+      const prog = p.prog === "__custom" ? p.custom : p.prog;
+      if (!prog) { prev.textContent = ""; return; }
+      try { prev.textContent = (await api("/api/chords", { key: keyStr(), progression: prog })).chords.join("  "); prev.classList.remove("bad"); }
+      catch (e) { prev.textContent = e.message; prev.classList.add("bad"); }
+    };
+    updateChords();
+    card._updateChords = updateChords;
+  } else {
+    left.append(h("div", { class: "hint" }, `メロディとコードは「${p.ref}」と同じ。歌詞の文字数が違っても自動で合わせます。`));
+  }
+  const enSel = h("select", { onchange: (e) => { p.energy = e.target.value; renderParts(); } },
+    h("option", { value: "low" }, "静か（Aメロ・イントロ向き）"),
+    h("option", { value: "mid" }, "ふつう（Bメロ向き）"),
+    h("option", { value: "high" }, "盛り上がる（サビ向き・音域も高く）"));
+  enSel.value = p.energy;
+  left.append(h("label", {}, "盛り上がり", enSel));
+  if (!p.lyrics.trim() && p.kind === "new") {
+    left.append(h("label", {}, "小節数（歌詞なしの時）",
+      h("input", { type: "number", min: 1, max: 32, value: p.bars, onchange: (e) => (p.bars = +e.target.value || 4) })));
+  }
+
+  // 右: 歌詞
+  const moraBox = h("div", { class: "mora-lines" });
+  const ta = h("textarea", { rows: 4, placeholder: "歌詞（なしならインスト）\n1 行 = 1 フレーズ", oninput: (e) => { p.lyrics = e.target.value; updMora(); } });
+  ta.value = p.lyrics;
+  const updMora = debounce(async () => {
+    const r = await moraOf(p.lyrics).catch((e) => ({ error: e.message, phrases: [] }));
+    let ref = null;
+    if (p.kind === "second") {
+      const rp = C.parts.find((q) => q.id === p.ref && q.kind !== "repeat");
+      if (rp && rp.lyrics.trim()) ref = (await moraOf(rp.lyrics).catch(() => ({ phrases: [] }))).phrases.map((x) => x.length);
+    }
+    moraBox.replaceChildren(...(r.error ? [h("div", { class: "bad" }, r.error)] : r.phrases.map((ph, k) => {
+      const n = ph.length;
+      let cls = n > 14 ? "warnc" : "ok", note = n > 14 ? "長め（4 小節使います）" : "";
+      if (ref) { cls = ref[k] === n ? "ok" : "warnc"; note = ref[k] === undefined ? "（元にない行）" : ref[k] === n ? "1番と同じ" : `1番は ${ref[k]}（自動で合わせます）`; }
+      return h("div", {}, h("span", { class: "n " + cls }, `${n} モーラ`), h("span", { class: "muted" }, ph.join("・")), h("span", { class: cls }, note));
+    })));
+    card.style.setProperty("--c", p.lyrics.trim() || p.kind === "second" ? COLORS[p.energy] : COLORS.inst);
+  }, 250);
+  updMora();
+  const right = h("div", {}, h("label", {}, "歌詞"), ta, moraBox);
+  card.append(h("div", { class: "sec-body" }, left, right));
+  return card;
+}
+
+function buildSpec() {
+  const sections = {};
+  const structure = [];
+  for (const p of C.parts) {
+    if (p.kind === "repeat") {
+      if (!sections[p.ref]) throw new Error(`「${p.ref}」がまだ作られていません（順番を確認してください）`);
+      structure.push(p.ref);
+      continue;
+    }
+    if (sections[p.id]) throw new Error(`パート名「${p.id}」が重複しています。もう一度使うときは「前のパートをもう一度」を選ぶか、名前を変えてください`);
+    structure.push(p.id);
+    if (p.kind === "second") {
+      sections[p.id] = { base: p.ref, energy: p.energy };
+      if (p.lyrics.trim()) sections[p.id].lyrics = p.lyrics;
+    } else {
+      const prog = p.prog === "__custom" ? p.custom : p.prog;
+      if (!prog.trim()) throw new Error(`「${p.id}」のコード進行が空です`);
+      sections[p.id] = { progression: prog, energy: p.energy };
+      if (p.lyrics.trim()) sections[p.id].lyrics = p.lyrics;
+      else sections[p.id].bars = p.bars;
+    }
+  }
+  if (!structure.length) throw new Error("パートがありません");
+  return { title: $("#c-title").value || "untitled", key: keyStr(), tempo: +$("#c-tempo").value,
+           style: $("#c-style").value, seed: +$("#c-seed").value, structure, sections };
+}
+
+$("#c-tempo").addEventListener("input", (e) => ($("#c-tempo-out").textContent = e.target.value));
+$("#c-tonic").addEventListener("change", () => $$(".sec-card").forEach((c) => c._updateChords && c._updateChords()));
+$("#c-mode").addEventListener("change", () => $$(".sec-card").forEach((c) => c._updateChords && c._updateChords()));
+$("#c-add").addEventListener("click", () => {
+  const used = new Set(C.parts.map((p) => p.id));
+  let name = "Aメロ", k = 2;
+  for (const t of Object.keys(PART_TYPES)) if (!used.has(t)) { name = t; break; }
+  while (used.has(name)) name = name.replace(/\d+$/, "") + k++;
+  C.parts.push(newPart(name)); renderParts();
+});
+$$("[data-template]").forEach((b) => b.addEventListener("click", () => applyTemplate(b.dataset.template)));
+$("#c-dice").addEventListener("click", () => { $("#c-seed").value = Math.floor(Math.random() * 1000); $("#c-go").click(); });
+$("#c-go").addEventListener("click", async () => {
+  let spec;
+  try { spec = buildSpec(); } catch (e) { return toast(e.message, true); }
+  const r = await busy("メロディを作っています…", () => api("/api/compose", { spec }));
+  toast("作曲しました！音を作ります");
+  await openInEditor(r.name, true);
+});
+
+// ====================================================================
+//  替え歌
+// ====================================================================
+const K = { song: null };
+async function kLoad() {
+  const name = $("#k-song").value;
+  if (!name) { $("#k-sections").replaceChildren(h("p", { class: "muted" }, "曲がありません。")); return; }
+  if (K.song && K.song.name === name) return;
+  K.song = await api("/api/song?name=" + encodeURIComponent(name));
+  $("#k-title").placeholder = K.song.view.title + "（替え歌）";
+  const secs = K.song.view.sections.filter((s) => s.has_melody);
+  const order = K.song.view.structure.filter((n, i, a) => a.indexOf(n) === i);
+  secs.sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
+  $("#k-sections").replaceChildren(...secs.map(kSection));
+  $("#k-report-panel").hidden = true;
+}
+function kSection(sec) {
+  const orig = sec.phrases.length ? sec.phrases : [];
+  const origBox = h("div", { class: "k-orig" },
+    h("b", {}, `【${sec.name}】`), h("span", { class: "muted" }, ` 歌う音 ${sec.sung} 個`),
+    ...(orig.length ? orig.map((ph) => h("div", { class: "phr" }, ph.join(""), h("span", { class: "cnt" }, `${ph.length}`)))
+      : [h("div", { class: "muted" }, "（元の歌詞なし）")]));
+  const status = h("div", { class: "mora-lines" });
+  const ta = h("textarea", { rows: Math.max(2, orig.length), "data-sec": sec.name, placeholder: "新しい歌詞（空欄ならこのパートは元のまま）" });
+  const upd = debounce(async () => {
+    const r = await moraOf(ta.value).catch((e) => ({ error: e.message, phrases: [] }));
+    if (r.error) return status.replaceChildren(h("div", { class: "bad" }, r.error));
+    const rows = r.phrases.map((ph, k) => {
+      const want = orig[k] ? orig[k].length : null;
+      const n = ph.length;
+      let msg = "", cls = "ok";
+      if (want === null) { msg = ""; }
+      else if (n === want) msg = "✓ ぴったり";
+      else if (n > want) { msg = `+${n - want} → 音符を割って合わせます`; cls = "warnc"; }
+      else { msg = `${n - want} → 音を伸ばして合わせます`; cls = "warnc"; }
+      return h("div", {}, h("span", { class: "n " + cls }, `${n}${want !== null ? " / " + want : ""}`), h("span", { class: "muted" }, ph.join("・")), h("span", { class: cls }, msg));
+    });
+    if (r.phrases.length && orig.length && r.phrases.length !== orig.length)
+      rows.push(h("div", { class: "warnc" }, `フレーズ数が違います（元 ${orig.length} / 新 ${r.phrases.length}）。全体で配分します。改行で揃えると自然になります`));
+    const total = r.phrases.reduce((a, p) => a + p.length, 0);
+    if (total) rows.push(h("div", { class: "muted" }, `合計 ${total} モーラ（元の歌う音 ${sec.sung}）`));
+    status.replaceChildren(...rows);
+  }, 250);
+  ta.addEventListener("input", upd);
+  return h("div", { class: "k-sec" }, origBox, h("div", {}, ta, status));
+}
+$("#k-song").addEventListener("change", () => { K.song = null; kLoad(); });
+$("#k-go").addEventListener("click", async () => {
+  if (!K.song) return;
+  const lyrics = {};
+  $$("#k-sections textarea").forEach((t) => { if (t.value.trim()) lyrics[t.dataset.sec] = t.value; });
+  if (!Object.keys(lyrics).length) return toast("新しい歌詞を 1 つ以上入れてください", true);
+  const title = $("#k-title").value.trim() || K.song.view.title + "（替え歌）";
+  const r = await busy("替え歌を作っています…", () => api("/api/kaeuta", { yaml: K.song.yaml, lyrics, title }));
+  $("#k-report").textContent = r.report.join("\n");
+  const panel = $("#k-report-panel");
+  panel.hidden = false;
+  $("#k-listen")?.remove();
+  panel.append(h("button", { id: "k-listen", class: "primary", onclick: () => openInEditor(r.name, true) }, "▶ 聴いてみる"));
+  panel.scrollIntoView({ behavior: "smooth" });
+});
+
+// ====================================================================
+//  編集・再生
+// ====================================================================
+const E = { cur: null, notes: [], raf: 0, pxPerBeat: 26 };
+
+async function openInEditor(name, autoplay = false) {
+  showTab("editor", { noload: true });
+  await eLoad(name);
+  await refreshSongs();
+  if (autoplay) await ePlay();
+}
+
+async function eLoad(name) {
+  const r = await api("/api/song?name=" + encodeURIComponent(name));
+  E.cur = { name: r.name, yaml: r.yaml, view: r.view, dirty: false };
+  $("#e-yaml").value = r.yaml;
+  $("#e-audio").removeAttribute("src");
+  $("#e-downloads").replaceChildren();
+  eShow(r.view);
+}
+
+function eShow(v) {
+  E.cur.view = v;
+  const dur = Math.round(v.duration_sec);
+  $("#e-meta").textContent = `${v.title} ／ キー ${v.key} ／ ${v.tempo} BPM ／ ${Math.floor(dur / 60)}:${String(dur % 60).padStart(2, "0")}`;
+  $("#e-tempo").value = v.tempo;
+  $("#e-style").value = v.style;
+  const byName = Object.fromEntries(v.sections.map((s) => [s.name, s]));
+  const order = v.structure.filter((n, i, a) => a.indexOf(n) === i);
+  $("#e-sections").replaceChildren(...order.map((n) => {
+    const s = byName[n];
+    const col = s.has_melody ? COLORS[s.energy] || COLORS.mid : COLORS.inst;
+    const chords = [...new Set(s.chords.map((c) => c.name).filter((c) => c !== "N.C."))].join(" ");
+    return h("div", { class: "secbox", style: `--c:${col}` }, h("b", {}, s.name), h("span", { class: "muted" }, `  ${s.bars}小節`),
+      h("div", { class: "muted" }, chords), h("div", { class: "lyr" }, s.phrases.map((p) => p.join("")).join("\n") || "（インスト）"));
+  }));
+  const w = $("#e-warn");
+  w.hidden = !v.warnings.length;
+  w.textContent = "⚠ " + v.warnings.join("\n⚠ ");
+  // ピアノロール用の絶対時間ノート
+  E.notes = [];
+  E.lines = [];
+  for (const t of v.timeline) {
+    const s = byName[t.name];
+    let line = [], lastEnd = null;
+    for (const n of s.notes) {
+      if (lastEnd !== null && n.t - lastEnd > 0.01 && line.length) { E.lines.push(line); line = []; }
+      const ev = { ...n, t: n.t + t.start, sec: t.name };
+      E.notes.push(ev); line.push(ev); lastEnd = n.t + n.d;
+    }
+    if (line.length) E.lines.push(line);
+  }
+  drawRoll(-1);
+}
+
+function drawRoll(beat) {
+  const v = E.cur?.view; if (!v) return;
+  const cv = $("#e-roll");
+  const total = v.timeline.reduce((a, t) => Math.max(a, t.start + t.length), 0);
+  const ppb = E.pxPerBeat;
+  const W = Math.max(cv.parentElement.clientWidth, total * ppb + 20);
+  const H = 320, top = 40;
+  const dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.style.width = W + "px"; cv.height = H * dpr; cv.style.height = H + "px"; }
+  const g = cv.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const css = getComputedStyle(document.documentElement);
+  const col = (n) => css.getPropertyValue(n).trim();
+  g.fillStyle = col("--roll-bg"); g.fillRect(0, 0, W, H);
+  const ps = E.notes.map((n) => n.p);
+  const lo = (ps.length ? Math.min(...ps) : 60) - 3, hi = (ps.length ? Math.max(...ps) : 72) + 3;
+  const rowH = (H - top - 8) / (hi - lo + 1);
+  const y = (p) => top + (hi - p) * rowH;
+  // 黒鍵の行
+  for (let p = lo; p <= hi; p++) if ([1, 3, 6, 8, 10].includes(p % 12)) { g.fillStyle = col("--roll-grid"); g.fillRect(0, y(p), W, rowH); }
+  // セクション帯
+  const byName = Object.fromEntries(v.sections.map((s) => [s.name, s]));
+  g.font = "bold 12px system-ui, sans-serif";
+  for (const t of v.timeline) {
+    const s = byName[t.name];
+    const c = s.has_melody ? COLORS[s.energy] : COLORS.inst;
+    g.fillStyle = c; g.globalAlpha = 0.9; g.fillRect(t.start * ppb + 1, 0, t.length * ppb - 2, 18); g.globalAlpha = 1;
+    g.fillStyle = "#fff"; g.fillText(t.name, t.start * ppb + 6, 13);
+    g.font = "11px system-ui, sans-serif"; g.fillStyle = col("--muted");
+    for (const ch of s.chords) if (ch.name !== "N.C.") g.fillText(ch.name, (t.start + ch.t) * ppb + 3, 32);
+    g.font = "bold 12px system-ui, sans-serif";
+  }
+  // 小節線
+  for (let b = 0; b <= total; b += v.beats_per_bar) { g.fillStyle = col("--roll-bar"); g.fillRect(b * ppb, top - 4, 1, H); }
+  // ノート
+  g.font = "11px system-ui, sans-serif";
+  for (const n of E.notes) {
+    const x = n.t * ppb, w = Math.max(3, n.d * ppb - 2), yy = y(n.p);
+    const active = beat >= n.t && beat < n.t + n.d;
+    g.fillStyle = active ? col("--accent-2") : col("--accent");
+    g.globalAlpha = n.m ? 0.55 : 1;
+    roundRect(g, x + 1, yy + 1, w, Math.max(4, rowH - 2), 3); g.fill();
+    g.globalAlpha = 1;
+    if (n.l && !n.m) { g.fillStyle = col("--text"); g.fillText(n.l, x + 2, yy - 2); }
+  }
+  if (beat >= 0) { g.fillStyle = col("--accent-2"); g.fillRect(beat * ppb, 0, 2, H); }
+}
+function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+
+function tick() {
+  const a = $("#e-audio");
+  const beat = a.currentTime * (E.cur?.view.tempo || 120) / 60;
+  drawRoll(beat);
+  // 自動スクロール
+  const wrap = $(".roll-wrap"), x = beat * E.pxPerBeat;
+  if (x < wrap.scrollLeft + 40 || x > wrap.scrollLeft + wrap.clientWidth - 80) wrap.scrollLeft = Math.max(0, x - 80);
+  // 歌詞表示
+  const line = E.lines?.find((l) => beat >= l[0].t - 1.0 && beat < l[l.length - 1].t + l[l.length - 1].d + 0.5);
+  const box = $("#e-lyrics-now");
+  if (line) {
+    box.innerHTML = line.filter((n) => !n.m).map((n) => `<span class="${beat >= n.t ? "done" : "todo"}">${esc(n.l)}</span>`).join("");
+  } else box.textContent = "";
+  if (!a.paused) E.raf = requestAnimationFrame(tick);
+}
+$("#e-audio").addEventListener("play", () => { cancelAnimationFrame(E.raf); E.raf = requestAnimationFrame(tick); });
+$("#e-audio").addEventListener("pause", () => cancelAnimationFrame(E.raf));
+$("#e-audio").addEventListener("seeked", tick);
+$("#e-roll").addEventListener("click", (e) => {
+  const a = $("#e-audio"); if (!a.src || !E.cur) return;
+  const r = e.target.getBoundingClientRect();
+  a.currentTime = ((e.clientX - r.left) / E.pxPerBeat) * 60 / E.cur.view.tempo;
+});
+
+function setYamlField(field, value) {
+  const ta = $("#e-yaml");
+  const re = new RegExp(`^${field}:.*$`, "m");
+  ta.value = re.test(ta.value) ? ta.value.replace(re, `${field}: ${value}`) : `${field}: ${value}\n` + ta.value;
+  E.cur.dirty = true;
+}
+$("#e-tempo").addEventListener("change", (e) => { setYamlField("tempo", +e.target.value); eCheck(true); });
+$("#e-style").addEventListener("change", (e) => { setYamlField("style", e.target.value); eCheck(true); });
+$("#e-yaml").addEventListener("input", () => E.cur && (E.cur.dirty = true));
+
+async function eCheck(quiet = false) {
+  const r = await api("/api/check", { yaml: $("#e-yaml").value }).catch((e) => { toast(e.message, true); throw e; });
+  eShow(r.view);
+  if (!quiet) toast(r.view.warnings.length ? "警告があります（パート一覧の下）" : "問題ありません ✓");
+}
+
+async function ePlay() {
+  if (!E.cur) return;
+  const mute = $("#e-karaoke").checked ? ["vocal"] : [];
+  const r = await busy("音を作っています…（30 秒ほどかかることがあります）", () =>
+    api("/api/render", { yaml: $("#e-yaml").value, name: E.cur.name, mute }));
+  eShow(r.view);
+  const f = r.files;
+  const a = $("#e-audio");
+  a.src = "/output/" + encodeURIComponent(f.mp3 || f.wav) + "?t=" + Date.now();
+  const dl = (label, file) => file ? h("a", { href: "/output/" + encodeURIComponent(file) + "?dl=1" }, label) : null;
+  $("#e-downloads").replaceChildren(h("span", { class: "muted" }, "ダウンロード:"),
+    dl("MP3", f.mp3), dl("WAV", f.wav), dl("MIDI", f.midi), dl("楽譜(MusicXML)", f.musicxml), dl("歌詞", f.lyrics));
+  try { await a.play(); } catch { /* 自動再生がブロックされた場合 */ }
+}
+$("#e-play").addEventListener("click", ePlay);
+$("#e-check").addEventListener("click", () => eCheck());
+$("#e-song").addEventListener("change", async (e) => {
+  if (E.cur?.dirty && !confirm("保存していない変更があります。破棄して切り替えますか？")) { e.target.value = E.cur.name; return; }
+  eLoad(e.target.value);
+});
+async function eSave(name) {
+  const r = await api("/api/save", { yaml: $("#e-yaml").value, name });
+  E.cur.name = r.name; E.cur.dirty = false;
+  await refreshSongs(); $("#e-song").value = r.name;
+  K.song = null;
+  toast(`保存しました（songs/${r.name}.yaml）`);
+  eCheck(true);
+}
+$("#e-save").addEventListener("click", () => E.cur && eSave(E.cur.name));
+$("#e-saveas-btn").addEventListener("click", () => {
+  const n = $("#e-saveas").value.trim();
+  if (!n) return toast("新しい名前を入れてください", true);
+  if (!E.cur) E.cur = { name: n, view: null };
+  eSave(n);
+});
+$("#e-delete").addEventListener("click", async () => {
+  if (!E.cur || !confirm(`「${E.cur.view.title}」（${E.cur.name}.yaml）を削除しますか？`)) return;
+  await api("/api/delete", { name: E.cur.name });
+  E.cur = null; await refreshSongs();
+  if ($("#e-song").value) eLoad($("#e-song").value);
+  toast("削除しました");
+});
+window.addEventListener("resize", debounce(() => drawRoll(-1), 200));
+
+// ====================================================================
+//  音楽のきほん
+// ====================================================================
+async function lUpdate() {
+  const r = await api("/api/progressions?key=" + encodeURIComponent($("#l-key").value));
+  $("#l-prog").replaceChildren(...r.items.map((g) => h("tr", {}, h("td", {}, g.name), h("td", {}, g.degrees), h("td", {}, g.chords.join(" ")), h("td", {}, g.desc))));
+}
+$("#l-key").addEventListener("change", lUpdate);
+
+// ---------------- 起動 ----------------
+(async function init() {
+  for (const t of TONICS) { $("#c-tonic").append(h("option", { value: t }, t)); }
+  for (const t of TONICS) for (const m of ["major", "minor"]) $("#l-key").append(h("option", { value: `${t} ${m}` }, `${t} ${m === "major" ? "メジャー" : "マイナー"}`));
+  try {
+    await loadProgressions();
+    applyTemplate("jpop");
+    await refreshSongs();
+    lUpdate();
+  } catch (e) { toast(e.message, true); }
+})();

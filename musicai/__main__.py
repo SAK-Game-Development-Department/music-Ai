@@ -6,11 +6,11 @@
   kaeuta   既存の曲の歌詞を差し替え、メロディを自動調整した替え歌ファイルを作る
   mora     歌詞のモーラ分割を表示
   progressions  定番コード進行の一覧
+  app      アプリ（ブラウザ画面）を起動
 """
 from __future__ import annotations
 
 import argparse
-import copy
 import sys
 from pathlib import Path
 
@@ -64,11 +64,10 @@ def cmd_compose(a):
 
 
 def cmd_kaeuta(a):
-    from .kaeuta import fit_lyrics
-    from .song import check_report, load_song, melody_to_text, parse_melody, save_song_dict, _resolve_spec
+    from .service import kaeuta
+    from .song import check_report, load_song, save_song_dict
 
     data = yaml.safe_load(Path(a.song).read_text(encoding="utf-8"))
-    song = load_song(a.song)
     if a.lyrics_file:
         new_lyrics = yaml.safe_load(Path(a.lyrics_file).read_text(encoding="utf-8"))
         if not isinstance(new_lyrics, dict):
@@ -77,25 +76,8 @@ def cmd_kaeuta(a):
         new_lyrics = {a.section: a.lyrics}
     else:
         sys.exit("--section と --lyrics、または --lyrics-file を指定してください")
-
-    new = copy.deepcopy(data)
-    new["title"] = a.title or f"{data.get('title', '')}（替え歌）"
-    for sec_name, text in new_lyrics.items():
-        if sec_name not in data.get("sections", {}):
-            sys.exit(f"セクション {sec_name!r} がありません（ある: {', '.join(data['sections'])}）")
-        spec = _resolve_spec(sec_name, data["sections"])
-        notes, _ = parse_melody(spec.get("melody", ""), song.beats_per_bar)
-        fitted, report = fit_lyrics(notes, text)
-        print(f"【{sec_name}】")
-        print("\n".join("  " + r for r in report))
-        sec = dict(new["sections"][sec_name] or {})
-        sec.pop("base", None)
-        sec.pop("fit", None)
-        merged = {**spec, **sec}
-        merged.pop("fit", None)
-        merged["melody"] = melody_to_text(fitted, song.beats_per_bar, song.key.prefer_flat)
-        merged["lyrics"] = text
-        new["sections"][sec_name] = merged
+    new, report = kaeuta(data, new_lyrics, a.title)
+    print("\n".join(report))
     out = a.out or str(Path(a.song).with_name(Path(a.song).stem + "_kaeuta.yaml"))
     save_song_dict(new, out)
     print(f"\n替え歌ファイル → {out}")
@@ -158,6 +140,11 @@ def main(argv=None):
     pr = sp.add_parser("progressions", help="定番コード進行の一覧")
     pr.add_argument("--key", default="C major")
     pr.set_defaults(func=cmd_progressions)
+
+    ap = sp.add_parser("app", help="アプリ画面を起動")
+    ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--no-browser", action="store_true")
+    ap.set_defaults(func=lambda a: __import__("musicai.app", fromlist=["run"]).run(a.port, not a.no_browser))
 
     a = p.parse_args(argv)
     try:

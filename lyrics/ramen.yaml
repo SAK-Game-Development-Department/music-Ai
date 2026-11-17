@@ -1,5 +1,5 @@
 # 替え歌用の新しい歌詞（セクション名: 歌詞）
-# python -m musicai kaeuta songs/hoshi.yaml --lyrics-file songs/hoshi_kaeuta_lyrics.yaml
+# python -m musicai kaeuta songs/hoshi.yaml --lyrics-file lyrics/ramen.yaml
 A: "ラーメンたべたい / チャーシューおおめで"
 B: "あついスープを / さいごまでのむ"
 A2: "おなかいっぱい / ごちそうさま"
