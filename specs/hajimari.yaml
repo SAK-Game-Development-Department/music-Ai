@@ -1,0 +1,47 @@
+# 作曲仕様: 歌詞・コード進行・構成だけ書けば、メロディは compose が作る
+#   python -m musicai compose specs/hajimari.yaml
+# できた songs/hajimari.yaml の melody / chords を AI と相談しながら直していく
+title: はじまりのうた
+key: G major
+tempo: 124
+style: pop          # pop / ballad / rock / simple
+seed: 3             # 変えると別のメロディになる
+structure: [intro, verse, prechorus, chorus, interlude, verse2, prechorus, chorus, outro]
+sections:
+  intro:
+    progression: 王道進行      # IV V iii vi
+    bars: 4
+  verse:                       # Aメロ: 低め・落ち着いて
+    progression: "I V vi iii IV I IV V"   # カノン進行
+    lyrics: |
+      まどをあけたら
+      かぜがはこんだ
+      {新|あたら}しいきせつの
+      においがしたよ
+  verse2:                      # 2番Aメロ: メロディは verse と同じ、歌詞だけ違う
+    base: verse
+    lyrics: |
+      きのうのぼくに
+      さよならをして
+      まだしらないみちを
+      あるいてゆくよ
+  prechorus:                   # Bメロ: 盛り上げの準備
+    progression: "vi IV I V"
+    energy: mid
+    lyrics: |
+      ふあんもあるけど
+      こころがはしりだす
+  chorus:                      # サビ: 高く・全部入り
+    progression: 王道進行
+    energy: high
+    lyrics: |
+      はじまりのうたを
+      {今|いま}うたおう
+      {空|そら}までとどけ
+      ぼくらのこえ
+  interlude:
+    progression: 王道進行
+    bars: 4
+  outro:
+    progression: "IV V I I"
+    bars: 4
