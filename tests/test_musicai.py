@@ -87,3 +87,67 @@ class SongTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TranscribeTest(unittest.TestCase):
+    """自作曲を音にして聴き取り、正解と比べる（音源取り込みの精度の下限チェック）。"""
+
+    @classmethod
+    def setUpClass(cls):
+        import tempfile
+
+        from musicai.arrange import arrange
+        from musicai.synth import render, write_wav
+
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.song = load_song("songs/hoshi.yaml")
+        cls.wav = f"{cls.tmp.name}/hoshi.wav"
+        write_wav(render(arrange(cls.song), cls.song.tempo), cls.wav)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_tempo_key_chords_melody(self):
+        from musicai.transcribe import analyze
+
+        an = analyze(self.wav)
+        self.assertAlmostEqual(an.tempo, 96, delta=0.5)
+        self.assertEqual(an.key.name(), "C major")
+        flat = [c for bar in an.chords for c in bar.split()]
+        self.assertGreaterEqual(sum(c in ("C", "F", "G") for c in flat) / len(flat), 0.8)
+        # 音符の中央の時刻で、正解の音高と一致する割合
+        spb = 60 / an.tempo
+        truth = []
+        for st, sec in self.song.timeline():
+            t = float(st) * 60 / self.song.tempo
+            for n in sec.notes:
+                d = float(n.dur) * 60 / self.song.tempo
+                if not n.is_rest:
+                    truth.append((t, t + d, n.pitch))
+                t += d
+        ok = 0
+        for a, d, p in an.notes:
+            mid = an.t0 + (a + d / 2) * spb / 4
+            ok += any(s <= mid < e and p == tp for s, e, tp in truth)
+        self.assertGreaterEqual(ok / len(an.notes), 0.6)
+
+    def test_import_and_kaeuta(self):
+        from pathlib import Path
+
+        from musicai import service
+
+        old = service.DATA_DIR, service.SONGS_DIR, service.IMPORTS_DIR, service.OUTPUT_DIR
+        base = Path(self.tmp.name)
+        service.DATA_DIR, service.SONGS_DIR, service.IMPORTS_DIR, service.OUTPUT_DIR = (
+            base, base / "songs", base / "imports", base / "output")
+        try:
+            res = service.import_song(self.wav, 9, 40, "取り込み")
+            song = load_song(base / "songs" / f"{res['name']}.yaml")
+            self.assertTrue(service.source_info(song))
+            data = song.raw
+            new, report = service.kaeuta(data, {"パート1": "らーめん / たべたい"})
+            files = service.render_song(song_from_dict(new), "k")
+            self.assertTrue((base / "output" / files["wav"]).stat().st_size > 100000)
+        finally:
+            service.DATA_DIR, service.SONGS_DIR, service.IMPORTS_DIR, service.OUTPUT_DIR = old

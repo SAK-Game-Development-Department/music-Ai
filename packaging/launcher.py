@@ -16,7 +16,13 @@ def selftest() -> int:
     for key in ("midi", "musicxml", "lyrics", "wav"):
         p = service.OUTPUT_DIR / files[key]
         assert p.is_file() and p.stat().st_size > 0, f"{key} が作れませんでした"
-    print("SELFTEST OK", files, "->", service.OUTPUT_DIR)
+    # 取り込み（ffmpeg でのデコード → 聴き取り → カラオケ化）も確認
+    res = service.import_song(str(service.OUTPUT_DIR / files["wav"]), 9, 40, "selftest_import")
+    imported = load_song(service.SONGS_DIR / f"{res['name']}.yaml")
+    assert sum(1 for s in imported.sections.values() for n in s.notes if not n.is_rest) > 10, "聴き取りに失敗"
+    (service.SONGS_DIR / f"{res['name']}.yaml").unlink()
+    import yt_dlp  # noqa: F401  同梱されているか
+    print("SELFTEST OK", files, "->", service.OUTPUT_DIR, "| import:", res["log"][-2])
     return 0
 
 
