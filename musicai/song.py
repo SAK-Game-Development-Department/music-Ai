@@ -54,6 +54,7 @@ class Section:
     bars: int
     lyrics_text: str = ""
     energy: str = "mid"
+    sing: bool = True  # False = 歌わないパート（間奏など）
     raw: dict = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
 
@@ -257,6 +258,7 @@ def _build_section(name: str, all_specs: dict, key: Key, bpb: int) -> Section:
         bars=int(length // bpb),
         lyrics_text=lyrics,
         energy=spec.get("energy", default_energy(name)),
+        sing=spec.get("sing", True) is not False,
         raw=spec,
         warnings=warns,
     )

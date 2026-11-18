@@ -203,3 +203,76 @@ class LyricGenTest(unittest.TestCase):
         lyrics, _ = service.auto_lyrics(data, keep={"B": "じぶんでかいた / かしだよ"}, seed=1)
         self.assertEqual(lyrics["B"], "じぶんでかいた / かしだよ")
         self.assertIn("A", lyrics)
+
+
+class LyricQualityTest(unittest.TestCase):
+    """歌詞の言い回し: 行が途中で切れない / 原曲のくり返しをまねる / 歌わないパートには付けない。"""
+
+    def test_lines_do_not_end_mid_sentence(self):
+        from musicai.lyricgen import LEAD_ENDINGS, THEMES, generate
+
+        counts = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+        for th in THEMES:
+            for seed in range(4):
+                lyr, _ = generate([("A", counts)], story=bool(seed % 2), theme=th, seed=seed)
+                for line in lyr["A"].split("\n"):
+                    last = line.split(" ")[-1]
+                    # 行末の「よ・ね・だよ・かな」は合いの手。それを除いた最後の言葉が「つなぎ」で終わらない
+                    for tail in ("だよ", "かな", "よ", "ね"):
+                        if last.endswith(tail) and len(last) > len(tail) + 2:
+                            last = last[: -len(tail)]
+                            break
+                    self.assertFalse(last.endswith(("を", "が", "は", "けど", "から", "のに")), (th, line))
+
+    def test_repeats_where_original_repeats(self):
+        from musicai.lyricgen import generate
+
+        orig = {"A": ["よぞらにひかる", "ちいさなほしよ"], "B": ["とおくのまちを", "てらしているよ"],
+                "C": ["よぞらにひかる", "ちいさなほしよ"]}
+        lyr, _ = generate([("A", [7, 7]), ("B", [7, 7]), ("C", [7, 7])], seed=1, originals=orig)
+        self.assertEqual(lyr["A"], lyr["C"])
+        self.assertNotEqual(lyr["A"], lyr["B"])
+
+    def test_unsung_parts_get_no_lyrics(self):
+        from musicai import service
+
+        data = load_song("songs/hoshi.yaml").raw
+        off = service.apply_sing(data, {"B": False})
+        lyrics, _ = service.auto_lyrics(off, seed=1)
+        self.assertNotIn("B", lyrics)
+        new, _ = service.kaeuta(off, {**lyrics, "B": "うたわない / はずのぱーと"})
+        song = song_from_dict(new)
+        self.assertFalse(song.sections["B"].sing)
+        self.assertEqual(song.sections["B"].lyrics_text, "とおくのまちを / てらしているよ")  # 元のまま
+        from musicai.arrange import arrange
+        arr = arrange(song)
+        b_start = next(float(t) for t, s in song.timeline() if s.name == "B")
+        b_end = b_start + float(song.sections["B"].length)
+        self.assertFalse([e for e in arr.tracks["vocal"] if b_start <= e.start < b_end])
+
+
+class VocalDetectionTest(unittest.TestCase):
+    """取り込み: イントロ・間奏・アウトロ（歌っていない小節）を見分けて、歌わないパートにする。"""
+
+    def test_intro_interlude_outro_are_not_sung(self):
+        import tempfile
+
+        from musicai.arrange import arrange
+        from musicai.synth import render, write_wav
+        from musicai.transcribe import analysis_to_song, analyze
+
+        song = load_song("songs/hajimari.yaml")  # イントロ 4 / 間奏 4 / アウトロ 4 小節
+        with tempfile.TemporaryDirectory() as d:
+            wav = f"{d}/h.wav"
+            write_wav(render(arrange(song), song.tempo), wav)
+            an = analyze(wav)
+        data = analysis_to_song(an, "t")
+        names = list(data["sections"])
+        self.assertEqual(names[0], "イントロ")
+        self.assertEqual(names[-1], "アウトロ")
+        self.assertTrue(any(n.startswith("間奏") for n in names), names)
+        for n, sec in data["sections"].items():
+            self.assertEqual(sec.get("sing", True), not (n.startswith(("イントロ", "間奏", "アウトロ"))), n)
+        # 歌っている小節のうち、歌と判定できた割合
+        sung_bars = sum(len(s["chords"].split("|")) for s in data["sections"].values() if s.get("sing", True))
+        self.assertGreaterEqual(sung_bars, 36)  # 正解は 40 小節

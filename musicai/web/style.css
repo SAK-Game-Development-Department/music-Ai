@@ -133,6 +133,9 @@ button.chip, label.inline { white-space: nowrap; }
 label.switch { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text); font-weight: 600; cursor: pointer; white-space: nowrap; }
 label.switch input { width: 18px; height: 18px; accent-color: var(--accent); }
 textarea.auto { border-color: var(--accent); border-style: dashed; }
+label.switch.small { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.k-sec.inst .k-orig { opacity: .55; }
+.k-sec.inst textarea { opacity: .6; }
 
 /* 替え歌: 取り込み */
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; padding: 3px; margin-bottom: 12px; background: var(--bg); flex-wrap: wrap; }

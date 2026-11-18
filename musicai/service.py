@@ -81,16 +81,37 @@ def auto_lyrics(data: dict, story: bool = True, theme: str | None = None, seed: 
     from .lyricgen import generate, phrase_counts
 
     song = song_from_dict(data)
-    keep = {k: v for k, v in (keep or {}).items() if (v or "").strip()}
-    todo = [(n, c) for n, c in phrase_counts(song) if n not in keep]
-    made, used_theme = generate(todo, story=story, theme=theme, seed=seed)
+    keep = {k: v for k, v in (keep or {}).items() if (v or "").strip() and song.sections.get(k)
+            and song.sections[k].sing}
+    counts, originals = phrase_counts(song, with_originals=True)
+    todo = [(n, c) for n, c in counts if n not in keep]
+    made, used_theme = generate(todo, story=story, theme=theme, seed=seed, originals=originals)
     return {**made, **keep}, used_theme
 
 
-def kaeuta(data: dict, new_lyrics: dict[str, str], title: str | None = None) -> tuple[dict, list[str]]:
-    """曲 dict の各セクションの歌詞を差し替え、メロディを合わせた新しい dict と報告を返す。"""
+def apply_sing(data: dict, sing: dict[str, bool] | None) -> dict:
+    """パートごとの「歌う / 歌わない（間奏）」の切り替えを曲 dict に反映したコピーを返す。"""
+    new = copy.deepcopy(data)
+    for name, on in (sing or {}).items():
+        sec = (new.get("sections") or {}).get(name)
+        if sec is None:
+            raise ValueError(f"セクション {name!r} がありません")
+        if on:
+            sec.pop("sing", None)
+        else:
+            sec["sing"] = False
+    return new
+
+
+def kaeuta(data: dict, new_lyrics: dict[str, str], title: str | None = None,
+           sing: dict[str, bool] | None = None) -> tuple[dict, list[str]]:
+    """曲 dict の各セクションの歌詞を差し替え、メロディを合わせた新しい dict と報告を返す。
+
+    sing: パート名 → 歌うか（False のパートは間奏として、歌詞を付けず歌わせない）。
+    """
     from .kaeuta import fit_lyrics
 
+    data = apply_sing(data, sing)
     song = song_from_dict(data)
     new = copy.deepcopy(data)
     new["title"] = title or f"{data.get('title', '')}（替え歌）"
@@ -98,6 +119,8 @@ def kaeuta(data: dict, new_lyrics: dict[str, str], title: str | None = None) -> 
     for sec_name, text in new_lyrics.items():
         if not (text or "").strip():
             continue
+        if (data["sections"].get(sec_name) or {}).get("sing") is False:
+            continue  # 歌わないパートには歌詞を付けない
         if sec_name not in data.get("sections", {}):
             raise ValueError(f"セクション {sec_name!r} がありません")
         spec = _resolve_spec(sec_name, data["sections"])
@@ -119,7 +142,10 @@ def kaeuta(data: dict, new_lyrics: dict[str, str], title: str | None = None) -> 
 def _mel_phrase_counts(notes) -> list[int]:
     from .kaeuta import melody_phrases
 
-    return [sum(1 for i in g if not notes[i].is_rest and not notes[i].melisma) for g in melody_phrases(notes)]
+    from .kaeuta import merge_small_phrases
+
+    return [sum(1 for i in g if not notes[i].is_rest and not notes[i].melisma)
+            for g in merge_small_phrases(notes, melody_phrases(notes))]
 
 
 def song_view(song: Song) -> dict:
@@ -161,6 +187,7 @@ def song_view(song: Song) -> dict:
             "mel_phrases": _mel_phrase_counts(sec.notes),
             "fit_counts": fit_counts.get(name),
             "has_melody": any(not n.is_rest for n in sec.notes),
+            "sing": sec.sing,
         })
     warnings = [w for s in song.sections.values() for w in s.warnings]
     return {

@@ -81,9 +81,9 @@ def arrange(song: Song) -> Arrangement:
         nxt = timeline[idx + 1][1] if idx + 1 < len(timeline) else None
         lvl = {"low": 0, "mid": 1, "high": 2}.get(e, 1)
 
-        # --- メロディ ---
+        # --- メロディ ---（歌わないパートは鳴らさない）
         t = t0
-        for n in sec.notes:
+        for n in (sec.notes if sec.sing else []):
             if not n.is_rest:
                 syl = n.lyric
                 vowel = syl.vowel if syl else "a"

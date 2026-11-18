@@ -111,6 +111,11 @@ def write_musicxml(song: Song, path: str | Path) -> None:
         for cs, cd, nm in sec.chords:
             harmonies.append((int((start + cs) * DIV), nm))
         for n in sec.notes:
+            if not sec.sing:  # 歌わないパート（間奏など）は休符
+                d = int(n.dur * DIV)
+                items.append((t, d, None, None))
+                t += d
+                continue
             d = int(n.dur * DIV)
             items.append((t, d, n.pitch, n.lyric.text if (n.lyric and not n.lyric.melisma) else None))
             t += d

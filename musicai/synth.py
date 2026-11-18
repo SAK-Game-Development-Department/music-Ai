@@ -57,7 +57,13 @@ def voice(ev: Event, dur_s: float, prev_pitch: float | None, sec_per_beat: float
         ratio = 2 ** ((prev_pitch - ev.pitch) / 12)
         f = f0 * (1 + (ratio - 1) * np.exp(-t / (glide / 3)))
     else:
-        f = np.full(n, f0)
+        # 前の音がないときは、少し下からしゃくり上げる（人の歌い出し）
+        f = f0 * 2 ** ((-0.35 * np.exp(-t / 0.035)) / 12)
+    # 人の声らしい、ゆっくりした音程の揺れ（±数セント）
+    rng = np.random.default_rng(int(ev.start * 1000) % (2 ** 31))
+    knots = rng.standard_normal(int(n / (0.08 * SR)) + 3) * 0.07  # 半音単位
+    drift = np.interp(np.arange(n), np.linspace(0, n, len(knots)), knots)
+    f = f * 2 ** (drift / 12)
     # ビブラート（伸ばした音だけ、遅れてかかる）
     vib_on = np.clip((t - 0.25) / 0.3, 0, 1) if dur_s > 0.4 else np.zeros(n)
     f = f * (1 + 0.012 * vib_on * np.sin(2 * np.pi * 5.6 * t))
