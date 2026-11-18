@@ -8,7 +8,7 @@
 - 採用すると、曲のファイルを提案の内容にして、「提案を採用: <タイトル>」のバージョンを保存する。
   今の曲がまだバージョンになっていなければ、先に自動で残す（採用も取り消せる）。
 - 提案のあとに曲が変わっていた場合（stale）は、そのままでは採用できない（ProposalConflict）。
-  解決は merge.py（C4）が担当する。
+  解決は merge.py（C4）が担当する（衝突したセクションごとに、自分の版か提案かを選ぶ）。
 """
 from __future__ import annotations
 
@@ -159,7 +159,25 @@ class Proposals:
         return self._read(self._song_name(song), pid)["yaml"]
 
     # ---------------- 採用・却下 ----------------
-    def adopt(self, song: str, pid: int, history: History | None = None) -> dict:
+    def conflicts(self, song: str, pid: int) -> dict:
+        """提案を出したあとに曲が変わっているとき、何が自動で取り込まれ、何が衝突するか。"""
+        from . import merge
+
+        name = self._song_name(song)
+        rec = self._read(name, pid)
+        if rec["status"] != "pending":
+            raise ProposalError(f"この提案は、すでに「{STATUS_LABEL.get(rec['status'])}」です")
+        cur = self._current(name)
+        if cur is None:
+            raise ProposalError(f"曲が見つかりません: {name}")
+        out = merge.analyze(rec.get("base") or "", cur, rec["yaml"])
+        out["stale"] = rec.get("base") != cur
+        return out
+
+    def adopt(self, song: str, pid: int, history: History | None = None, choices: dict | None = None) -> dict:
+        """採用する。曲が変わっていた（stale）ときは、choices（単位の id → mine / theirs）で衝突を解決する。"""
+        from . import merge
+
         name = self._song_name(song)
         with _lock:
             rec = self._read(name, pid)
@@ -168,8 +186,17 @@ class Proposals:
             current = self._current(name)
             if current is None:
                 raise ProposalError(f"曲が見つかりません: {name}")
+            text, resolved = rec["yaml"], False
             if rec.get("base") != current:
-                raise ProposalConflict("この提案を出したあとに、曲が変更されています。変更が重なるところを選んで解決してください")
+                if choices is None:
+                    raise ProposalConflict("この提案を出したあとに、曲が変更されています。変更が重なるところを選んで解決してください")
+                plan = merge.analyze(rec.get("base") or "", current, rec["yaml"])
+                undecided = [u["label"] for u in plan["units"] if u["decision"] == "conflict" and u["id"] not in choices]
+                if undecided:
+                    raise ProposalConflict("まだ選んでいない衝突があります: " + "、".join(undecided))
+                text, resolved = merge.resolve(rec.get("base") or "", current, rec["yaml"], choices), True
+                if text == current:
+                    raise ProposalError("選んだ結果が、今の曲と同じ内容です（変わるところがありません）。不要な提案なら「却下」してください")
             auto = None
             if history is not None:  # 採用も取り消せるよう、今の内容を先にバージョンとして残す
                 try:
@@ -177,14 +204,15 @@ class Proposals:
                     auto = r["no"] if r["saved"] else None
                 except HistoryUnavailable:
                     history = None
-            self._song_file(name).write_text(rec["yaml"], encoding="utf-8")
+            self._song_file(name).write_text(text, encoding="utf-8")
             no = None
             if history is not None:
                 try:
-                    no = history.save_version(name, f"提案を採用: {rec['title']}")["no"]
+                    note = f"提案を採用（衝突を解決）: {rec['title']}" if resolved else f"提案を採用: {rec['title']}"
+                    no = history.save_version(name, note)["no"]
                 except HistoryError:
                     no = None
-            rec.update(status="adopted", adopted_version=no,
+            rec.update(status="adopted", adopted_version=no, resolved=resolved,
                        decided_at=datetime.now().astimezone().isoformat(timespec="seconds"))
             self._write(name, rec)
         msg = "提案を採用しました" + ("（バージョンに保存しました）" if no else "（履歴機能は使えないため、バージョンは保存していません）")

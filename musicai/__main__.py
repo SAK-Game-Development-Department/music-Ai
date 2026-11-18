@@ -96,6 +96,25 @@ def cmd_migrate(a):
         sys.exit(f"{len(files)} 件中 {bad} 件を移行できませんでした")
 
 
+def cmd_export(a):
+    from .tools import EXPORT_FORMATS, ToolError, export_song_file
+
+    formats = [f.strip() for f in a.format.split(",") if f.strip()]
+    bad = [f for f in formats if f not in EXPORT_FORMATS]
+    if bad or not formats:
+        sys.exit(f"エラー: --format は {','.join(EXPORT_FORMATS)} から選んでください（{','.join(bad) or '空'}）")
+    out = Path(a.out or "output")
+    try:
+        res = export_song_file(Path(a.song), Path(a.song).stem, out, formats, a.allow_warnings)
+    except ToolError as e:
+        sys.exit(f"エラー: {e}")
+    for f, name in res["files"].items():
+        print(f"{f:<9} {out / name}")
+    if res["missing"]:
+        print("作れなかった形式: " + ", ".join(res["missing"]) + "（mp3 は ffmpeg が必要です）")
+
+
+
 def cmd_propose(a):
     from . import service
     from .proposals import Proposals
