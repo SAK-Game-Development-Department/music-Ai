@@ -305,21 +305,26 @@ async function kLoad() {
 }
 
 // ---- 歌詞の自動生成 ----
+function kSingMap() {  // パート名 → 歌うか（間奏として歌わないパートは false）
+  const m = {};
+  $$("#k-sections input[data-sing]").forEach((c) => { m[c.dataset.sing] = c.checked; });
+  return m;
+}
 function kAutoOpts() {
-  return { story: $("#k-story").checked, theme: $("#k-theme").value, seed: K.seed };
+  return { story: $("#k-story").checked, theme: $("#k-theme").value, seed: K.seed, sing: kSingMap() };
 }
 async function kAutoFill() {
   if (!K.song) return;
   const tas = $$("#k-sections textarea");
   const keep = {};
-  tas.forEach((t) => { if (t.value.trim() && t.dataset.auto !== "1") keep[t.dataset.sec] = t.value; });
+  tas.forEach((t) => { if (!t.disabled && t.value.trim() && t.dataset.auto !== "1") keep[t.dataset.sec] = t.value; });
   try {
     const r = await api("/api/lyrics", { yaml: K.song.yaml, keep, ...kAutoOpts() });
     if ($("#k-theme").options.length <= 1) {
       for (const th of r.themes) $("#k-theme").append(h("option", { value: th }, th));
     }
     tas.forEach((t) => {
-      if (keep[t.dataset.sec] !== undefined || r.lyrics[t.dataset.sec] === undefined) return;
+      if (t.disabled || keep[t.dataset.sec] !== undefined || r.lyrics[t.dataset.sec] === undefined) return;
       t.value = r.lyrics[t.dataset.sec];
       t.dataset.auto = "1";
       t.classList.add("auto");
@@ -382,7 +387,29 @@ function kSection(sec) {
   ta.addEventListener("input", (e) => {  // 人が書き換えたら「自動」ではなくなる（作り直しで消さない）
     if (e.isTrusted) { ta.dataset.auto = ""; ta.classList.remove("auto"); }
   });
-  return h("div", { class: "k-sec" }, origBox, h("div", {}, ta, status));
+  const placeholder = ta.placeholder;
+  const singBox = h("input", { type: "checkbox", "data-sing": sec.name });
+  singBox.checked = sec.sing !== false;
+  const row = h("div", { class: "k-sec" }, origBox,
+    h("div", {}, h("label", { class: "switch small", title: "外すと、このパートは間奏として歌わず、歌詞も付けません" },
+      singBox, " 🎵 このパートを歌う"), ta, status));
+  const applySing = (fromUser) => {
+    const on = singBox.checked;
+    ta.disabled = !on;
+    row.classList.toggle("inst", !on);
+    if (!on) {
+      if (ta.dataset.auto === "1") { ta.value = ""; ta.dataset.auto = ""; ta.classList.remove("auto"); }
+      ta.placeholder = "間奏（歌わないパート）。歌わせたいときは上のチェックを入れてください";
+      status.replaceChildren();
+    } else {
+      ta.placeholder = placeholder;
+      if (fromUser && $("#k-auto").checked && !ta.value.trim()) kAutoFill();
+      ta.dispatchEvent(new Event("input"));
+    }
+  };
+  singBox.addEventListener("change", () => applySing(true));
+  applySing(false);
+  return row;
 }
 $("#k-song").addEventListener("change", () => { K.song = null; kLoad(); });
 
@@ -445,7 +472,7 @@ $("#i-go").addEventListener("click", async () => {
 $("#k-go").addEventListener("click", async () => {
   if (!K.song) return;
   const lyrics = {};
-  $$("#k-sections textarea").forEach((t) => { if (t.value.trim()) lyrics[t.dataset.sec] = t.value; });
+  $$("#k-sections textarea").forEach((t) => { if (!t.disabled && t.value.trim()) lyrics[t.dataset.sec] = t.value; });
   const auto = $("#k-auto").checked;
   if (!auto && !Object.keys(lyrics).length)
     return toast("新しい歌詞を 1 つ以上入れるか、「歌詞を自動で作る」にチェックを入れてください", true);

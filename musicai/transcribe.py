@@ -41,6 +41,7 @@ class Analysis:
     notes: list[tuple[int, int, int]]  # (開始16分, 長さ16分, MIDI) 1 小節目の頭から
     chords: list[str]  # 小節ごと（"C" や "C G"）
     bars: int
+    bar_vocal: list[bool] = field(default_factory=list)  # 小節ごとに「歌っていそうか」
     f0: np.ndarray = field(repr=False, default=None)
     log: list[str] = field(default_factory=list)
 
@@ -157,7 +158,13 @@ def track_pitch(mag: np.ndarray, jump_cost: float = 0.07) -> tuple[np.ndarray, n
     path[-1] = int(score.argmax())
     for t in range(n_f - 1, 0, -1):
         path[t - 1] = back[t, path[t]]
-    midi = CAND[path].astype(float)
+    # 候補の刻み（1/4 半音）より細かく: 前後の候補の強さから放物線補間（ビブラートなどの細かい揺れを見るため）
+    cols = np.arange(n_f)
+    lo_i, hi_i = np.clip(path - 1, 0, n_c - 1), np.clip(path + 1, 0, n_c - 1)
+    s0, sl, sh = sal[path, cols], sal[lo_i, cols], sal[hi_i, cols]
+    den = sl - 2 * s0 + sh
+    frac = np.where(np.abs(den) > 1e-9, 0.5 * (sl - sh) / np.where(np.abs(den) > 1e-9, den, 1), 0.0)
+    midi = CAND[path].astype(float) + np.clip(frac, -0.5, 0.5) * step
     strength = sal[path, np.arange(n_f)]
     # 有声判定（ヒステリシス）: 強い所で歌い始め、少し弱くなっても続いている間は歌とみなす
     p35, p90 = np.percentile(peak_raw, 35), np.percentile(peak_raw, 90)
@@ -500,8 +507,13 @@ def analyze(path: str | Path, start: float = 0.0, end: float | None = None, voca
         log.append(f"コードから調を {key.name()} → {key2.name()} に修正")
         key = key2
         chords = estimate_chords(ch, bass, frame_of, bars, 4, key)  # 表記（♯/♭）を合わせる
+    bar_vocal = vocal_bars(L, R, t0, spb, bars, notes)
+    n_inst = sum(1 for v in bar_vocal if not v)
     log.append(f"テンポ {tempo:.1f} / キー {key.name()} / {bars} 小節 / 音符 {len(notes)} 個")
-    return Analysis(tempo=round(float(tempo), 2), t0=float(t0), key=key, notes=notes, chords=chords, bars=bars, f0=midi, log=log)
+    if n_inst:
+        log.append(f"歌っていないと判断した小節: {n_inst} 小節（イントロ・間奏・アウトロとして分けました）")
+    return Analysis(tempo=round(float(tempo), 2), t0=float(t0), key=key, notes=notes, chords=chords, bars=bars,
+                    f0=midi, log=log, bar_vocal=bar_vocal)
 
 
 def make_karaoke(path: str | Path, out: Path, start: float = 0.0, end: float | None = None, sr: int = 44100) -> Path:
@@ -523,16 +535,84 @@ def make_karaoke(path: str | Path, out: Path, start: float = 0.0, end: float | N
     return out
 
 
+def vocal_bars(L: np.ndarray, R: np.ndarray, t0: float, spb: float, bars: int,
+               notes: list[tuple[int, int, int]]) -> list[bool]:
+    """小節ごとに、歌（ボーカル）が入っていそうか。
+
+    手がかり: ① 中音域（300〜3000Hz）で「真ん中から聞こえる音」の割合（ボーカルはふつう真ん中、
+    イントロ・間奏のギターやシンセは左右に広がっていることが多い） ② その小節で聴き取れた音符の数。
+    1 小節だけの「歌っていない」はサビの厚い伴奏による誤判定が多いので、前後が歌なら歌とみなす。
+    """
+    if bars <= 0:
+        return []
+    XL, XR = stft(L, N_FFT_SHORT, HOP), stft(R, N_FFT_SHORT, HOP)
+    f = np.arange(XL.shape[0]) * SR / N_FFT_SHORT
+    band = (f > 300) & (f < 3000)
+    mag = np.abs(XL[band]) + np.abs(XR[band])
+    sim = np.clip(1 - np.abs(XL[band] - XR[band]) / (mag + 1e-9), 0, 1)
+    center = (mag * sim ** 4).sum(axis=0)
+    total = mag.sum(axis=0) + 1e-9
+    ratios, counts = [], []
+    for b in range(bars):
+        a, e = int((t0 + b * 4 * spb) * FPS), int((t0 + (b + 1) * 4 * spb) * FPS)
+        ratios.append(float(center[a:e].sum() / max(total[a:e].sum(), 1e-9)) if e > a else 0.0)
+        counts.append(sum(1 for q, _, _ in notes if b * 16 <= q < (b + 1) * 16))
+    ratios = np.array(ratios)
+    busy = np.array(counts) >= 2
+    med = float(np.median(ratios[busy])) if busy.any() else float(np.median(ratios))
+    vocal = [bool(r >= 0.92 * med and c >= 2) for r, c in zip(ratios, counts)]
+    # 1 小節だけの「歌っていない」を埋める
+    for b in range(1, bars - 1):
+        if not vocal[b] and vocal[b - 1] and vocal[b + 1]:
+            vocal[b] = True
+    return vocal
+
+
+def _parts_from_bars(vocal: list[bool], section_bars: int) -> list[tuple[int, int, bool]]:
+    """(開始小節, 終了小節, 歌う) のパート分け。歌わない区間は 2 小節以上のときだけ独立させる。"""
+    runs: list[list] = []
+    for b, v in enumerate(vocal):
+        if runs and runs[-1][2] == v:
+            runs[-1][1] = b + 1
+        else:
+            runs.append([b, b + 1, v])
+    merged: list[list] = []
+    for r in runs:  # 1 小節だけの間奏は前の歌パートに含める
+        if not r[2] and r[1] - r[0] < 2 and merged and merged[-1][2]:
+            merged[-1][1] = r[1]
+        elif merged and merged[-1][2] == r[2]:
+            merged[-1][1] = r[1]
+        else:
+            merged.append(r)
+    out = []
+    for b0, b1, v in merged:
+        if not v:
+            out.append((b0, b1, False))
+            continue
+        b = b0
+        while b < b1:  # 歌の区間は section_bars 小節ごと（最後が短すぎるときは前に足す）
+            e = min(b1, b + section_bars)
+            if b1 - e < 3:
+                e = b1
+            out.append((b, e, True))
+            b = e
+    return out
+
+
 def analysis_to_song(an: Analysis, title: str, section_bars: int = 8) -> dict:
-    """解析結果 → 曲 dict（セクションは section_bars 小節ごと）。"""
+    """解析結果 → 曲 dict。歌っている区間は section_bars 小節ごとのパート、
+    歌っていない区間（イントロ・間奏・アウトロ）は sing: false のパートにする。"""
     from .song import Note, melody_to_text
 
     bpb = 4
     sections = {}
     structure = []
     notes = sorted(an.notes)
-    for si, b0 in enumerate(range(0, an.bars, section_bars)):
-        b1 = min(an.bars, b0 + section_bars)
+    vocal = an.bar_vocal or [True] * an.bars
+    parts = _parts_from_bars(vocal, section_bars)
+    n_sung = 0
+    n_inter = 0
+    for pi, (b0, b1, sung) in enumerate(parts):
         lo, hi = b0 * 16, b1 * 16
         seq: list[Note] = []
         pos = lo
@@ -548,8 +628,19 @@ def analysis_to_song(an: Analysis, title: str, section_bars: int = 8) -> dict:
             pos = e2
         if pos < hi:
             seq.append(Note(None, Fraction(hi - pos, 4)))
-        name = f"パート{si + 1}"
+        if sung:
+            n_sung += 1
+            name = f"パート{n_sung}"
+        elif pi == 0:
+            name = "イントロ"
+        elif pi == len(parts) - 1:
+            name = "アウトロ"
+        else:
+            n_inter += 1
+            name = f"間奏{n_inter}"
         sec = {"chords": " | ".join(an.chords[b0:b1])}
+        if not sung:
+            sec["sing"] = False
         if any(not n.is_rest for n in seq):
             # 先頭がメリスマだと歌詞が付けられないので、通常の音に戻す
             for nn in seq:

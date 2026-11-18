@@ -44,6 +44,7 @@
         "lyrics": {"type": "string", "description": "歌詞。1 行 = 1 フレーズ、漢字は {漢字|よみ}"},
         "base": {"type": "string", "description": "メロディとコードを引き継ぐセクション名"},
         "fit": {"type": "boolean", "description": "true なら歌詞のモーラ数にメロディを自動調整"},
+        "sing": {"type": "boolean", "description": "false なら歌わないパート（間奏など）。メロディは参考として残すが、歌も歌詞も付けない"},
         "energy": {"enum": ["low", "mid", "high"]},
         "bars": {"type": "integer", "minimum": 1}
       }

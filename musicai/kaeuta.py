@@ -63,6 +63,30 @@ def melody_phrases(notes: list[Note], want: int | None = None) -> list[list[int]
     return groups
 
 
+SMALL_PHRASE = 3  # この数以下の音しかないフレーズは、となりのフレーズとまとめる（聴き取りの細切れ対策）
+
+
+def merge_small_phrases(notes: list[Note], groups: list[list[int]], small: int = SMALL_PHRASE) -> list[list[int]]:
+    """歌う音が small 個以下のフレーズを、近い方のとなりのフレーズとまとめる（間の休符も含める）。"""
+    def sung(g):
+        return sum(1 for i in g if not notes[i].is_rest and not notes[i].melisma)
+
+    groups = [list(g) for g in groups]
+    while len(groups) > 1:
+        idx = next((k for k, g in enumerate(groups) if sung(g) <= small), None)
+        if idx is None:
+            break
+        gap_prev = (groups[idx][0] - groups[idx - 1][-1]) if idx > 0 else None
+        gap_next = (groups[idx + 1][0] - groups[idx][-1]) if idx + 1 < len(groups) else None
+        if gap_next is None or (gap_prev is not None and gap_prev <= gap_next):
+            a, b = idx - 1, idx
+        else:
+            a, b = idx, idx + 1
+        groups[a] = list(range(groups[a][0], groups[b][-1] + 1))  # 間の休符もまとまりに入れる
+        del groups[b]
+    return groups
+
+
 def _slots(group: list[Note]) -> int:
     return sum(1 for n in group if not n.is_rest and not n.melisma)
 
@@ -133,7 +157,10 @@ def fit_lyrics(notes: list[Note], lyrics: str) -> tuple[list[Note], list[str]]:
     """notes（休符含む）に lyrics をフィットさせた新しい Note リストとレポートを返す。"""
     syls = split_mora(lyrics)
     lyr_phr = phrases(syls)
-    mel_phr = melody_phrases(notes, len(lyr_phr))
+    raw_phr = melody_phrases(notes, len(lyr_phr))
+    merged_phr = merge_small_phrases(notes, raw_phr)
+    # 歌詞の行数と合う方の区切りを使う（ふつうは細切れをまとめた方）
+    mel_phr = raw_phr if len(raw_phr) == len(lyr_phr) and len(merged_phr) != len(lyr_phr) else merged_phr
     report: list[str] = []
     total_slots = sum(1 for n in notes if not n.is_rest and not n.melisma)
     report.append(f"元のメロディ: 歌う音 {total_slots} 個 / {len(mel_phr)} フレーズ")
