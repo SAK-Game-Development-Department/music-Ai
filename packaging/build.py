@@ -14,6 +14,7 @@ args = [
     "--paths", str(ROOT),
     "--add-data", f"{ROOT / 'musicai' / 'web'}:musicai/web",
     "--add-data", f"{ROOT / 'songs'}:songs",
+    "--add-data", f"{ROOT / 'schemas'}:schemas",  # 曲データの形式チェックに使う
     "--hidden-import", "musicai.app",
     # 音声のデコードに使う ffmpeg 本体（imageio-ffmpeg に同梱）と、YouTube 取得の yt-dlp
     "--collect-all", "imageio_ffmpeg",

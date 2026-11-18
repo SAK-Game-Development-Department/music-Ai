@@ -13,6 +13,20 @@
     "tempo": {"type": "number", "exclusiveMinimum": 0},
     "time": {"type": "string", "pattern": "^[0-9]+/[0-9]+$", "description": "拍子。例: 4/4"},
     "style": {"enum": ["pop", "ballad", "rock", "simple"]},
+    "accompaniment": {"enum": ["generated", "source", "both"], "description": "伴奏: generated=自動アレンジ / source=取り込んだ元の音源（カラオケ化） / both=両方。source が無い曲は generated"},
+    "source": {
+      "type": "object",
+      "description": "YouTube・音声ファイルから取り込んだ曲の元音源（python -m musicai import が書く）",
+      "properties": {
+        "from": {"type": "string", "description": "取り込み元（URL かファイル名）"},
+        "range": {"type": "array", "items": {"type": ["number", "null"]}, "description": "使った範囲 [開始秒, 終了秒]（終了が null なら最後まで）"},
+        "backing": {"type": "string", "description": "カラオケ音源（データフォルダからの相対パス）"},
+        "original": {"type": "string", "description": "元の音源（同上）"},
+        "offset": {"type": "number", "minimum": 0, "description": "backing の中で 1 小節目が始まる秒"}
+      },
+      "required": ["backing"],
+      "additionalProperties": false
+    },
     "structure": {"type": "array", "items": {"type": "string"}, "description": "演奏順。sections のキーを並べる。省略時は sections の順"},
     "sections": {
       "type": "object",
