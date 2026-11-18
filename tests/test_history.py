@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -32,6 +33,7 @@ def git(cwd, *args):
     return subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True, text=True).stdout
 
 
+@unittest.skipUnless(shutil.which("git"), "git が無い環境では履歴のテストを飛ばす")
 class RepoCase(unittest.TestCase):
     def setUp(self):
         self._td = tempfile.TemporaryDirectory()

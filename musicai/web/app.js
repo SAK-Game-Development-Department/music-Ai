@@ -513,13 +513,16 @@ $("#e-song").addEventListener("change", async (e) => {
   if (E.cur?.dirty && !confirm("保存していない変更があります。破棄して切り替えますか？")) { e.target.value = E.cur.name; return; }
   eLoad(e.target.value);
 });
-async function eSave(name) {
-  const r = await api("/api/save", { yaml: $("#e-yaml").value, name });
-  E.cur.name = r.name; E.cur.dirty = false;
-  await refreshSongs(); $("#e-song").value = r.name;
-  K.song = null;
-  toast(`保存しました（songs/${r.name}.yaml）`);
-  eCheck(true);
+async function eSave(name) {  // 保存できたら true。失敗（形式エラーなど）は画面に出して false
+  try {
+    const r = await api("/api/save", { yaml: $("#e-yaml").value, name });
+    E.cur.name = r.name; E.cur.dirty = false;
+    await refreshSongs(); $("#e-song").value = r.name;
+    K.song = null;
+    toast(`保存しました（songs/${r.name}.yaml）`);
+    eCheck(true);
+    return true;
+  } catch (e) { toast(e.message, true); return false; }
 }
 $("#e-save").addEventListener("click", () => E.cur && eSave(E.cur.name));
 $("#e-saveas-btn").addEventListener("click", () => {
@@ -600,7 +603,7 @@ async function hDiff() {
 
 $("#h-save").addEventListener("click", async () => {
   if (!E.cur) return toast("曲を選んでください", true);
-  await eSave(E.cur.name);  // 作業中の内容をまず保存してから、バージョンにする
+  if (!(await eSave(E.cur.name))) return;  // 作業中の内容をまず保存してから、バージョンにする（保存できなければ中止）
   const r = await api("/api/version/save", { name: E.cur.name, note: $("#h-note").value }).catch((e) => { toast(e.message, true); throw e; });
   if (r.available === false) return hOff(r.message);
   if (r.saved) $("#h-note").value = "";
