@@ -44,6 +44,8 @@
 「↩ このバージョンに戻す」で昔の内容に戻せます。戻す前の内容（まだバージョンにしていない作業）は自動で残り、戻したことも新しいバージョンとして記録されるので、あとからやり直せます。
 この機能には Git が必要です。入っていない場合やフォルダが Git 管理でない場合は「履歴機能は使えません」と表示され、ほかの機能はそのまま使えます。
 
+**提案**（🎹 編集・再生タブの「💡 提案」）: AI に頼んだ修正案は、曲を直接書き換えず「提案」として届きます。内容・理由・歌詞の違いを見て、試聴してから、**採用**か**却下**を選びます。採用したときだけ曲に反映され、バージョンとして記録されます（採用の直前の内容も自動で残るので、あとから戻せます）。提案を出したあとに曲を直していた場合は、「🔀 重なりを確かめて採用」で、**重なっている所（セクション単位）だけ**「あなたの版」か「提案」を選びます。重ならない所は自動で合わせます（合わせた結果は YAML を作り直すので、ファイル内のコメントは消えます）。
+
 アプリはこのパソコンの中だけで動きます（インターネットに曲は送られません）。
 MP3 で保存するには ffmpeg が必要です（なくても WAV で再生・保存できます）。
 
@@ -63,6 +65,8 @@ python -m musicai export songs/ramen.yaml --format midi,musicxml,lyrics   # 音�
 python -m musicai pipeline compose specs/hajimari.yaml --name 新曲   # 作曲→検証→書き出しを一括で（失敗しても何も変わらない）
 python -m musicai mcp                                   # AI アプリ向けの MCP サーバ（下の「AI アプリから使う」）
 python -m musicai import "https://youtu.be/..." --start 45 --end 90   # YouTube / 音声ファイルを取り込む
+python -m musicai propose hoshi --yaml 修正案.yaml --title "サビを高く" --reason "…"   # 修正案を提案として出す（AI 用）
+python -m musicai proposals hoshi                       # 曲の提案の一覧
 python -m musicai mora "きょうはいいてんき"              # モーラを数える
 python -m musicai progressions --key G                  # 定番進行
 ```
@@ -91,9 +95,8 @@ musicai/
   schema.py    ファイル構造の検証（schemas/*.schema.json）
   migrate.py   古い形式のファイルを最新にする（schema_version）
   history.py   曲のバージョン履歴・歌詞の差分（git を使うのはここだけ）
-  tools.py     compose / kaeuta / validate / export（CLI と MCP が共通で呼ぶ）
-  mcp_server.py  MCP サーバ（標準入出力。標準ライブラリだけ）
-  pipeline.py  生成→検証→書き出しの一括実行（失敗時はロールバック）
+  proposals.py AI の修正案（提案）の保管・採用・却下
+  merge.py     提案と、提案後に変わった曲の 3 点比較（セクション単位の衝突解決）
   composer.py  歌詞 + 進行 → メロディ自動生成
   kaeuta.py    替え歌（歌詞差し替え + メロディ自動調整）
   transcribe.py 音源の聴き取り（テンポ・キー・コード・歌メロ）とカラオケ化
@@ -103,6 +106,7 @@ musicai/
   export.py    MIDI / MusicXML / 歌詞カード
 schemas/ 曲・作曲仕様の JSON Schema（人間・AI・CLI 共通の約束事）
 songs/   保存した曲（アプリの曲リスト）
+proposals/ AI の修正案（採用するまで曲には反映されない。Git の対象外）
 lyrics/  替え歌用の歌詞ファイル
 specs/   作曲仕様（歌詞・進行・構成だけ書いたもの）
 tests/   python -m unittest discover -s tests

@@ -17,7 +17,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import yaml
 
-from . import history, service
+from . import history, proposals, service
 from .composer import compose
 from .lyrics import phrases, split_mora
 from .song import song_from_dict
@@ -116,32 +116,50 @@ def api_version_save(_q, b):
     return {"available": True, "name": name, **r}
 
 
-def api_version_restore(_q, b):
-    """曲をバージョン no の内容に戻す（戻した内容も新しいバージョンになる）。作業中の内容は先に自動で残す。"""
-    name = service.safe_name(b.get("name", ""))
-    try:
-        r = _history().restore_version(name, int(b.get("no")))
-    except history.HistoryUnavailable:
-        return _unavailable()
-    return {"available": True, "name": name, **r}
+def _proposals() -> proposals.Proposals:
+    return proposals.Proposals(service.PROPOSALS_DIR, service.SONGS_DIR)
 
 
-def api_version_render(_q, b):
-    """バージョン no の内容を音にする（比較試聴用。作業中のファイルは変えない）。"""
-    name = service.safe_name(b.get("name", ""))
-    no = int(b.get("no"))
-    try:
-        text = _history().read_version(name, no)
-    except history.HistoryUnavailable:
-        return _unavailable()
-    song = song_from_dict(_load_yaml_text(text))
-    stem = f"{name}_v{no}"
+def api_proposals(q, _b):
+    song = q.get("song", [""])[0]
+    return {"song": service.safe_name(song), "proposals": _proposals().list(song)}
+
+
+def api_proposal(q, _b):
+    return _proposals().get(q.get("song", [""])[0], int(q.get("id", [""])[0]))
+
+
+def api_proposal_submit(_q, b):
+    return _proposals().submit(b.get("song", ""), b.get("yaml", ""), b.get("title", ""), b.get("reason", ""))
+
+
+def api_proposal_conflicts(q, _b):
+    return _proposals().conflicts(q.get("song", [""])[0], int(q.get("id", [""])[0]))
+
+
+def api_proposal_adopt(_q, b):
+    choices = b.get("choices")
+    if choices is not None and not (isinstance(choices, dict) and all(isinstance(v, str) for v in choices.values())):
+        raise ValueError("choices は「単位: mine か theirs」の形で渡してください")
+    return _proposals().adopt(b.get("song", ""), int(b.get("id")), _history(), choices)
+
+
+def api_proposal_reject(_q, b):
+    return _proposals().reject(b.get("song", ""), int(b.get("id")))
+
+
+def api_proposal_render(_q, b):
+    """提案の内容を音にする（試聴用。曲のファイルは変えない）。"""
+    pid = int(b.get("id"))
+    name = service.safe_name(b.get("song", ""))
+    song = song_from_dict(_load_yaml_text(_proposals().yaml_of(name, pid)))
+    stem = f"{name}_提案{pid}"
     mute = set(b.get("mute") or [])
     if mute:
         stem += "_" + "_".join(sorted(mute)) + "なし"
     with _render_lock:
         files = service.render_song(song, stem, mute)
-    return {"available": True, "name": name, "no": no, "files": files}
+    return {"song": name, "id": pid, "files": files}
 
 
 def api_render(_q, b):
@@ -278,8 +296,13 @@ ROUTES = {
     ("GET", "/api/history"): api_history,
     ("GET", "/api/history/diff"): api_history_diff,
     ("POST", "/api/version/save"): api_version_save,
-    ("POST", "/api/version/restore"): api_version_restore,
-    ("POST", "/api/version/render"): api_version_render,
+    ("GET", "/api/proposals"): api_proposals,
+    ("GET", "/api/proposal"): api_proposal,
+    ("POST", "/api/proposal/submit"): api_proposal_submit,
+    ("GET", "/api/proposal/conflicts"): api_proposal_conflicts,
+    ("POST", "/api/proposal/adopt"): api_proposal_adopt,
+    ("POST", "/api/proposal/reject"): api_proposal_reject,
+    ("POST", "/api/proposal/render"): api_proposal_render,
     ("POST", "/api/render"): api_render,
     ("POST", "/api/compose"): api_compose,
     ("POST", "/api/kaeuta"): api_kaeuta,

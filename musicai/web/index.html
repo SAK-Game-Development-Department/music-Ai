@@ -197,6 +197,13 @@
     </div>
   </div>
 
+  <div class="panel" id="e-proposals">
+    <h2>💡 提案 <span id="p-count" class="badge" hidden></span> <small class="muted">AI が出した修正案。採用するまで、曲は変わりません</small></h2>
+    <p class="hint">AI（Claude など）に「サビを高くして」などと頼むと、曲を直接書き換えずに、ここに<b>提案</b>が届きます。
+      内容と理由を確かめて、<b>採用</b>か<b>却下</b>を選びます。採用したときだけ、バージョンとして記録されます（採用の直前の内容も残るので、あとから戻せます）。</p>
+    <ul id="p-list" class="timeline"></ul>
+  </div>
+
   <details class="panel">
     <summary><b>✏️ 曲データを直接編集（上級）</b> <span class="muted">— Claude に「サビを高くして」等と頼むとここを書き換えてくれます</span></summary>
     <p class="hint">melody: <code>音名:拍数</code>（C4 = 真ん中のド、<code>r</code> = 休符、<code>~</code> = 前の文字を伸ばす、<code>|</code> = 小節線）。

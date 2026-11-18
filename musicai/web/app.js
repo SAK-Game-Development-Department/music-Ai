@@ -429,6 +429,7 @@ async function eLoad(name) {
   $("#e-downloads").replaceChildren();
   eShow(r.view);
   hLoad(r.name);
+  pLoad(r.name);
 }
 
 function eShow(v) {
@@ -609,7 +610,7 @@ $("#e-delete").addEventListener("click", async () => {
   if (!E.cur || !confirm(`「${E.cur.view.title}」（${E.cur.name}.yaml）を削除しますか？`)) return;
   await api("/api/delete", { name: E.cur.name });
   E.cur = null; await refreshSongs();
-  hClear();
+  hClear(); pClear();
   if ($("#e-song").value) eLoad($("#e-song").value);
   toast("削除しました");
 });
@@ -721,6 +722,124 @@ async function hDiff() {
       ...s.lines.map((l) => l.type === "change"
         ? h("div", { class: "dl change" }, h("div", { class: "remove" }, "－ " + l.old), h("div", { class: "add" }, "＋ " + l.new))
         : h("div", { class: "dl " + l.type }, (l.type === "add" ? "＋ " : l.type === "remove" ? "－ " : "　 ") + l.text)))));
+}
+
+// ---------------- 提案（AI の修正案） ----------------
+const P = { name: null, items: [] };
+function pClear() { P.name = null; P.items = []; pRender(); }
+
+async function pLoad(name) {
+  try {
+    const r = await api("/api/proposals?song=" + encodeURIComponent(name));
+    P.name = name; P.items = r.proposals;
+  } catch { P.name = name; P.items = []; }
+  pRender();
+}
+
+function pRender() {
+  const pending = P.items.filter((x) => x.status === "pending").length;
+  const badge = $("#p-count");
+  badge.hidden = !pending; badge.textContent = `${pending} 件`;
+  $("#p-list").replaceChildren(...(P.items.length ? P.items.map(pItem)
+    : [h("li", { class: "muted" }, "提案はありません。")]));
+}
+
+function pItem(x) {
+  const open = x.status === "pending";
+  const box = h("div", { class: "pdetail" });
+  const audio = h("div", { class: "pdetail" });
+  return h("li", { class: "prop " + x.status },
+    h("div", {}, h("b", {}, x.title), " ", h("span", { class: "tag " + x.status }, x.status_label),
+      h("span", { class: "muted" }, ` ${fmtAt(x.at)}`)),
+    x.reason ? h("div", { class: "note" }, x.reason) : null,
+    h("div", { class: "muted" }, "変更: " + x.summary),
+    x.warnings.length ? h("div", { class: "pwarn" }, "⚠ " + x.warnings.join(" ／ ")) : null,
+    x.stale ? h("div", { class: "pwarn" }, "⚠ この提案を出したあとに、曲が変わっています。重なる部分を確かめてから採用します。") : null,
+    x.status === "adopted" && x.adopted_version ? h("div", { class: "muted" }, `バージョン ${x.adopted_version} として記録しました`) : null,
+    h("div", { class: "vtools row gap wrap" },
+      h("button", { class: "ghost chip", onclick: () => pDetail(x.id, box) }, "👁 内容を見る"),
+      open ? h("button", { class: "ghost chip", onclick: () => pPlay(x.id, audio) }, "🎧 試聴") : null,
+      open && !x.stale ? h("button", { class: "primary chip", onclick: () => pAdopt(x) }, "✔ 採用") : null,
+      open && x.stale ? h("button", { class: "primary chip", onclick: () => pResolve(x, box) }, "🔀 重なりを確かめて採用") : null,
+      open ? h("button", { class: "ghost chip", onclick: () => pReject(x) }, "✖ 却下") : null),
+    box, audio);
+}
+
+async function pDetail(id, box) {
+  if (box.childElementCount) return box.replaceChildren();  // もう一度押すと閉じる
+  const d = await api(`/api/proposal?song=${encodeURIComponent(P.name)}&id=${id}`).catch((e) => { toast(e.message, true); throw e; });
+  const changed = d.lyrics.filter((s) => s.changed);
+  box.replaceChildren(h("h3", {}, "歌詞の違い（今の曲 → 提案）"),
+    !changed.length ? h("p", { class: "muted" }, "歌詞に違いはありません（メロディ・コードなどの変更です）。") : null,
+    ...changed.map((s) => h("div", { class: "dsec" },
+      h("b", {}, `【${s.name}】`),
+      s.status === "added" ? h("span", { class: "muted" }, " （このパートが追加されます）") : null,
+      s.status === "removed" ? h("span", { class: "muted" }, " （このパートが削除されます）") : null,
+      ...s.lines.map((l) => l.type === "change"
+        ? h("div", { class: "dl change" }, h("div", { class: "remove" }, "－ " + l.old), h("div", { class: "add" }, "＋ " + l.new))
+        : h("div", { class: "dl " + l.type }, (l.type === "add" ? "＋ " : l.type === "remove" ? "－ " : "　 ") + l.text)))));
+}
+
+async function pPlay(id, holder) {
+  $("#e-audio").pause();
+  const mute = $("#e-karaoke").checked ? ["vocal"] : [];
+  const r = await busy("提案の音を作っています…（30 秒ほどかかることがあります）", () =>
+    api("/api/proposal/render", { song: P.name, id, mute })).catch(() => null);
+  if (!r) return;
+  const f = r.files.mp3 || r.files.wav;
+  const au = h("audio", { controls: true, autoplay: true, src: "/output/" + encodeURIComponent(f) + "?t=" + Date.now() });
+  holder.replaceChildren(h("div", { class: "muted" }, "提案の試聴（曲のファイルは変わりません）"), au);
+  au.play().catch(() => {});
+}
+
+async function pAdopt(x, choices) {  // choices: 曲が変わっていたときの選択（単位 → mine / theirs）
+  if (!E.cur) return;
+  if (!confirm(`「${x.title}」を採用しますか？\n\n・曲がこの提案の内容に変わります${choices ? "（選んだ内容で合わせます）" : ""}\n・採用する直前の内容は、先にバージョンとして残します（あとから戻せます）`)) return;
+  if (E.cur.dirty) {  // 編集中の内容が、採用で失われないように
+    if (!confirm("保存していない編集があります。先に保存してから採用します。よろしいですか？")) return;
+    if (!(await eSave(E.cur.name))) return;
+  }
+  const r = await api("/api/proposal/adopt", choices ? { song: P.name, id: x.id, choices } : { song: P.name, id: x.id }).catch((e) => { toast(e.message, true); return null; });
+  if (!r) return pLoad(P.name);  // 失敗（曲が変わっていた等）は、一覧を読み直して状態を見せる
+  await eLoad(P.name);  // 画面を、採用した内容で読み直す
+  toast(r.message);
+}
+
+const pVal = (v) => (v === null || v === undefined ? "（なし）" : typeof v === "string" ? v : JSON.stringify(v));
+
+async function pResolve(x, box) {
+  if (box.childElementCount) return box.replaceChildren();  // もう一度押すと閉じる
+  const plan = await api(`/api/proposal/conflicts?song=${encodeURIComponent(P.name)}&id=${x.id}`).catch((e) => { toast(e.message, true); throw e; });
+  const chosen = {};
+  const go = h("button", { class: "primary", onclick: () => pAdopt(x, { ...chosen }) }, "この内容で採用");
+  const conflicts = plan.units.filter((u) => u.decision === "conflict");
+  const refresh = () => { go.disabled = conflicts.some((u) => !chosen[u.id]); };
+  const auto = (kind) => plan.units.filter((u) => u.decision === kind).map((u) => u.label);
+  const note = (text, names) => names.length ? h("div", { class: "muted" }, `${text}: ${names.join("、")}`) : null;
+  box.replaceChildren(
+    h("h3", {}, "曲が変わっています"),
+    h("p", { class: "hint" }, conflicts.length
+      ? "提案と、あなたの変更が重なっている所が " + conflicts.length + " つあります。それぞれ、どちらを残すか選んでください。重ならない所は自動で合わせます。"
+      : "重なっている所はありません。あなたの変更と提案を、そのまま合わせます。"),
+    note("自動で取り込む（提案の変更）", auto("theirs")), note("そのまま残す（あなたの変更）", auto("mine")),
+    ...conflicts.map((u) => h("div", { class: "dsec" },
+      h("b", {}, `【${u.label}】`),
+      h("table", { class: "prog" }, h("thead", {}, h("tr", {}, ...["項目", "元", "あなたの版", "提案"].map((t) => h("th", {}, t)))),
+        h("tbody", {}, ...u.fields.map((f) => h("tr", {}, h("td", {}, f.field), h("td", { class: "muted" }, pVal(f.base)),
+          h("td", {}, pVal(f.mine)), h("td", {}, pVal(f.theirs)))))),
+      h("div", { class: "row gap" },
+        ...[["mine", "あなたの版を残す"], ["theirs", "提案にする"]].map(([v, label]) => h("label", { class: "inline" },
+          h("input", { type: "radio", name: "pc-" + x.id + "-" + u.id, onchange: () => { chosen[u.id] = v; refresh(); } }), label)))
+    )),
+    h("p", { class: "hint" }, "※ 合わせた結果は、YAML を作り直すため、ファイルの中のコメント（# …）は消えます。"),
+    go);
+  refresh();
+}
+
+async function pReject(x) {
+  const r = await api("/api/proposal/reject", { song: P.name, id: x.id }).catch((e) => { toast(e.message, true); return null; });
+  if (r) toast(r.message);
+  pLoad(P.name);
 }
 
 $("#h-save").addEventListener("click", async () => {

@@ -38,6 +38,7 @@ if FROZEN and not _writable(DATA_DIR):
 ROOT = DATA_DIR
 SONGS_DIR = DATA_DIR / "songs"
 SPECS_DIR = DATA_DIR / "specs"
+PROPOSALS_DIR = DATA_DIR / "proposals"  # AI の修正案（採用するまで曲には反映しない）
 OUTPUT_DIR = DATA_DIR / "output"
 
 

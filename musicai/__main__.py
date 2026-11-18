@@ -7,6 +7,8 @@
   compose  作曲仕様（歌詞・進行・構成）→ メロディ付きの曲ファイル
   kaeuta   既存の曲の歌詞を差し替え、メロディを自動調整した替え歌ファイルを作る
   import   YouTube の URL / 音声ファイル → 曲ファイル（テンポ・キー・コード・歌メロを推定、カラオケ音源つき）
+  propose  曲の修正案を「提案」として出す（曲は書き換えない。人がアプリで採用したときだけ反映）
+  proposals  曲の提案の一覧
   mora     歌詞のモーラ分割を表示
   progressions  定番コード進行の一覧
   export   曲ファイル → MIDI / MusicXML / 歌詞カード（既定）。--format で wav / mp3 も。validate と check を通ったものだけ
@@ -94,22 +96,29 @@ def cmd_migrate(a):
         sys.exit(f"{len(files)} 件中 {bad} 件を移行できませんでした")
 
 
-def cmd_export(a):
-    from .tools import EXPORT_FORMATS, ToolError, export_song_file
+def cmd_propose(a):
+    from . import service
+    from .proposals import Proposals
 
-    formats = [f.strip() for f in a.format.split(",") if f.strip()]
-    bad = [f for f in formats if f not in EXPORT_FORMATS]
-    if bad or not formats:
-        sys.exit(f"エラー: --format は {','.join(EXPORT_FORMATS)} から選んでください（{','.join(bad) or '空'}）")
-    out = Path(a.out or "output")
-    try:
-        res = export_song_file(Path(a.song), Path(a.song).stem, out, formats, a.allow_warnings)
-    except ToolError as e:
-        sys.exit(f"エラー: {e}")
-    for f, name in res["files"].items():
-        print(f"{f:<9} {out / name}")
-    if res["missing"]:
-        print("作れなかった形式: " + ", ".join(res["missing"]) + "（mp3 は ffmpeg が必要です）")
+    text = Path(a.yaml).read_text(encoding="utf-8")
+    r = Proposals(service.PROPOSALS_DIR, service.SONGS_DIR).submit(a.song, text, a.title, a.reason or "")
+    print(f"提案 {r['id']} を出しました: {r['title']}")
+    print(f"  変更: {r['summary']}")
+    for w in r["warnings"]:
+        print(f"  ⚠ {w}")
+    print("アプリの「💡 提案」で、内容を確かめて採用・却下してください。")
+
+
+def cmd_proposals(a):
+    from . import service
+    from .proposals import Proposals
+
+    items = Proposals(service.PROPOSALS_DIR, service.SONGS_DIR).list(a.song)
+    if not items:
+        print("提案はありません")
+    for x in items:
+        flag = "  ⚠ 提案のあとに曲が変わっています" if x["stale"] else ""
+        print(f"[{x['id']}] {x['status_label']}  {x['title']}  — {x['summary']}{flag}")
 
 
 def cmd_pipeline(a):
@@ -279,6 +288,17 @@ def main(argv=None):
     im.add_argument("--end", type=float, help="使う範囲の終了（秒）")
     im.add_argument("--title")
     im.set_defaults(func=cmd_import)
+
+    pp = sp.add_parser("propose", help="修正案を提案として出す（曲は書き換えない）")
+    pp.add_argument("song", help="曲の名前（songs/<名前>.yaml の名前）")
+    pp.add_argument("--yaml", required=True, help="修正後の曲 YAML のファイル")
+    pp.add_argument("--title", required=True, help="提案のタイトル（何を直したか）")
+    pp.add_argument("--reason", help="理論的な理由")
+    pp.set_defaults(func=cmd_propose)
+
+    ps = sp.add_parser("proposals", help="曲の提案の一覧")
+    ps.add_argument("song")
+    ps.set_defaults(func=cmd_proposals)
 
     mo = sp.add_parser("mora", help="歌詞のモーラを数える")
     mo.add_argument("text")
