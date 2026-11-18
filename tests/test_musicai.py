@@ -97,7 +97,13 @@ class TranscribeTest(unittest.TestCase):
         import tempfile
 
         from musicai.arrange import arrange
+        from musicai.audio_io import AudioError, ffmpeg_exe
         from musicai.synth import render, write_wav
+
+        try:
+            ffmpeg_exe()
+        except AudioError:
+            raise unittest.SkipTest("ffmpeg が無い環境では音声取り込みのテストを飛ばす")
 
         cls.tmp = tempfile.TemporaryDirectory()
         cls.song = load_song("songs/hoshi.yaml")
