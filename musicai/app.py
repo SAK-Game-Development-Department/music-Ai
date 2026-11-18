@@ -133,15 +133,8 @@ def api_proposal_submit(_q, b):
     return _proposals().submit(b.get("song", ""), b.get("yaml", ""), b.get("title", ""), b.get("reason", ""))
 
 
-def api_proposal_conflicts(q, _b):
-    return _proposals().conflicts(q.get("song", [""])[0], int(q.get("id", [""])[0]))
-
-
 def api_proposal_adopt(_q, b):
-    choices = b.get("choices")
-    if choices is not None and not (isinstance(choices, dict) and all(isinstance(v, str) for v in choices.values())):
-        raise ValueError("choices は「単位: mine か theirs」の形で渡してください")
-    return _proposals().adopt(b.get("song", ""), int(b.get("id")), _history(), choices)
+    return _proposals().adopt(b.get("song", ""), int(b.get("id")), _history())
 
 
 def api_proposal_reject(_q, b):
@@ -299,7 +292,6 @@ ROUTES = {
     ("GET", "/api/proposals"): api_proposals,
     ("GET", "/api/proposal"): api_proposal,
     ("POST", "/api/proposal/submit"): api_proposal_submit,
-    ("GET", "/api/proposal/conflicts"): api_proposal_conflicts,
     ("POST", "/api/proposal/adopt"): api_proposal_adopt,
     ("POST", "/api/proposal/reject"): api_proposal_reject,
     ("POST", "/api/proposal/render"): api_proposal_render,
