@@ -12,6 +12,7 @@
   mora     歌詞のモーラ分割を表示
   progressions  定番コード進行の一覧
   export   曲ファイル → MIDI / MusicXML / 歌詞カード（既定）。--format で wav / mp3 も。validate と check を通ったものだけ
+  pipeline 作曲（または替え歌）→ validate → check → 書き出しを一括で。失敗したら songs/ と output/ は変わらない
   mcp      MCP サーバ（標準入出力）を起動。AI アプリから compose / kaeuta / validate / export を呼べる
   app      アプリ（ブラウザ画面）を起動
 """
@@ -120,6 +121,44 @@ def cmd_proposals(a):
         print(f"[{x['id']}] {x['status_label']}  {x['title']}  — {x['summary']}{flag}")
 
 
+def cmd_pipeline(a):
+    from .pipeline import run
+    from .tools import EXPORT_FORMATS, ToolError
+
+    formats = [f.strip() for f in a.format.split(",") if f.strip()]
+    bad = [f for f in formats if f not in EXPORT_FORMATS]
+    if bad or not formats:
+        sys.exit(f"エラー: --format は {','.join(EXPORT_FORMATS)} から選んでください（{','.join(bad) or '空'}）")
+    args = {"mode": a.mode, "formats": formats, "allow_warnings": a.allow_warnings, "overwrite": a.overwrite}
+    if a.name:
+        args["name"] = a.name
+    if a.mode == "compose":
+        spec = yaml.safe_load(Path(a.source).read_text(encoding="utf-8")) if Path(a.source).is_file() else None
+        if spec is None:
+            args["spec_name"] = a.source  # ファイルが無ければ specs/ の名前として扱う
+        else:
+            args["spec"] = spec
+    else:
+        if not a.lyrics_file:
+            sys.exit("エラー: 替え歌には --lyrics-file（セクション名: 歌詞 の YAML）が必要です")
+        args["song"] = a.source
+        args["lyrics"] = yaml.safe_load(Path(a.lyrics_file).read_text(encoding="utf-8"))
+        if a.title:
+            args["title"] = a.title
+    try:
+        r = run(args)
+    except ToolError as e:
+        sys.exit(f"エラー: {e}")
+    print(" → ".join(r["steps"]))
+    print(f"曲: {r['path']}")
+    for f, p in r["files"].items():
+        print(f"  {f:<9} {p}")
+    if r.get("snapshot_version"):
+        print(f"（上書き前の内容は、バージョン {r['snapshot_version']} に残しました）")
+    if r.get("note"):
+        print(r["note"])
+
+
 def cmd_check(a):
     from .schema import validate_file
     from .song import check_report, load_song
@@ -214,6 +253,17 @@ def main(argv=None):
     ex.add_argument("-o", "--out", help="出力フォルダ（既定: output）")
     ex.add_argument("--allow-warnings", action="store_true", help="check の警告があっても書き出す")
     ex.set_defaults(func=cmd_export)
+
+    pl = sp.add_parser("pipeline", help="作曲/替え歌 → validate → check → 書き出しを一括で（失敗しても何も変えない）")
+    pl.add_argument("mode", choices=["compose", "kaeuta"])
+    pl.add_argument("source", help="compose: 作曲仕様のファイル（か specs/ の名前） / kaeuta: 元の曲の名前")
+    pl.add_argument("--lyrics-file", help="[kaeuta] YAML: セクション名: 新しい歌詞")
+    pl.add_argument("--title", help="[kaeuta] 替え歌のタイトル")
+    pl.add_argument("--name", help="保存する曲の名前")
+    pl.add_argument("--format", default="midi,musicxml,lyrics", help="midi,musicxml,lyrics,wav,mp3 のうちカンマ区切り")
+    pl.add_argument("--allow-warnings", action="store_true")
+    pl.add_argument("--overwrite", action="store_true", help="同名の曲を上書き（上書き前の内容は自動でバージョンに残る）")
+    pl.set_defaults(func=cmd_pipeline)
 
     mc = sp.add_parser("mcp", help="MCP サーバ（標準入出力）を起動")
     mc.set_defaults(func=lambda a: __import__("musicai.mcp_server", fromlist=["serve"]).serve())

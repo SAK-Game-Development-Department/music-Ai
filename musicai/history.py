@@ -119,15 +119,45 @@ class History:
                 last = self._show(top, commits[0][0], rel)
                 if last == (top / rel).read_text(encoding="utf-8"):
                     return {"saved": False, "message": "前のバージョンから変更がありません", "no": len(commits)}
-            self._run(["add", "--", rel], cwd=top)
-            msg = f"{note or _DEFAULT_NOTE}\n\n{KIND_VERSION}: 1\n{SONG_TRAILER}: {rel}"
-            ident = []
-            if not self._run(["config", "user.name"], cwd=top, check=False).strip():
-                ident += ["-c", "user.name=music-Ai"]
-            if not self._run(["config", "user.email"], cwd=top, check=False).strip():
-                ident += ["-c", "user.email=music-ai@localhost"]
-            self._run([*ident, "commit", "--only", "--allow-empty", "--no-verify", "--no-gpg-sign", "-q", "-m", msg, "--", rel], cwd=top)
+            self._commit_locked(top, rel, note)
         return {"saved": True, "message": "バージョンを保存しました", "no": len(commits) + 1}
+
+    def read_version(self, name: str, no: int) -> str:
+        """バージョン no の YAML テキスト（作業中のファイルは変えない）。"""
+        top, rel = self._rel(name)
+        commits = list(reversed(self._commits(top, rel)))
+        if not 1 <= no <= len(commits):
+            raise HistoryError(f"バージョン {no} がありません")
+        text = self._show(top, commits[no - 1][0], rel)
+        if not text:
+            raise HistoryError(f"バージョン {no} の内容を取り出せませんでした")
+        return text
+
+    def restore_version(self, name: str, no: int) -> dict:
+        """曲をバージョン no の内容に戻す。履歴は巻き戻さず、戻した内容を新しいバージョンとして足す。
+
+        作業中の内容が最新のバージョンと違うときは、先に自動でバージョンとして残す（失われない）。
+        """
+        top, rel = self._rel(name)
+        with _lock:
+            newest_first = self._commits(top, rel)
+            if not 1 <= no <= len(newest_first):
+                raise HistoryError(f"バージョン {no} がありません")
+            target = self._show(top, list(reversed(newest_first))[no - 1][0], rel)
+            if not target:
+                raise HistoryError(f"バージョン {no} の内容を取り出せませんでした")
+            path, count, auto = top / rel, len(newest_first), None
+            if path.is_file():
+                cur = path.read_text(encoding="utf-8")
+                if cur == target:
+                    return {"restored": False, "message": f"すでにバージョン {no} と同じ内容です", "no": count, "auto_saved": None}
+                if cur != self._show(top, newest_first[0][0], rel):
+                    self._commit_locked(top, rel, "復元前の自動保存")
+                    count += 1
+                    auto = count
+            path.write_text(target, encoding="utf-8")
+            self._commit_locked(top, rel, f"バージョン {no} に戻した")
+        return {"restored": True, "message": f"バージョン {no} に戻しました", "no": count + 1, "auto_saved": auto}
 
     def list_versions(self, name: str) -> list[Version]:
         """古い順。no は 1 から。"""
@@ -155,6 +185,18 @@ class History:
         return {"a": info(no_a), "b": info(no_b), "sections": diff_lyrics(ta, tb)}
 
     # ---------------- 内部 ----------------
+    def _commit_locked(self, top: Path, rel: str, note: str) -> None:
+        """その曲のファイルだけを、バージョンとして記録する（_lock を持った状態で呼ぶ）。"""
+        self._run(["add", "--", rel], cwd=top)
+        msg = f"{note or _DEFAULT_NOTE}\n\n{KIND_VERSION}: 1\n{SONG_TRAILER}: {rel}"
+        ident = []
+        if not self._run(["config", "user.name"], cwd=top, check=False).strip():
+            ident += ["-c", "user.name=music-Ai"]
+        if not self._run(["config", "user.email"], cwd=top, check=False).strip():
+            ident += ["-c", "user.email=music-ai@localhost"]
+        self._run([*ident, "commit", "--only", "--allow-empty", "--no-verify", "--no-gpg-sign", "-q", "-m", msg, "--", rel],
+                  cwd=top)
+
     def _commits(self, top: Path, rel: str) -> list[tuple[str, str, str]]:
         """新しい順の [(内部 ID, 日時, メッセージ本文)]。この曲の印のあるものだけ。"""
         out = self._run(["log", f"--grep=^{KIND_VERSION}: 1$", "--format=%H%x1f%aI%x1f%B%x1e"], cwd=top, check=False)

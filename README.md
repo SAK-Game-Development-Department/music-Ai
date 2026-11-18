@@ -40,6 +40,8 @@
 
 **バージョン**（🎹 編集・再生タブ）: 「保存」は作業中の曲を上書きするだけです。節目の状態を残したいときは
 「バージョンを保存」（メモは任意）。一覧から 2 つ選ぶと、歌詞の違いが行ごとに（追加・削除・変更で）見られます。
+2 つ選んだ状態で「聴き比べ」を押すと、2 つのバージョンを同じ位置から切り替えて聴けます。
+「↩ このバージョンに戻す」で昔の内容に戻せます。戻す前の内容（まだバージョンにしていない作業）は自動で残り、戻したことも新しいバージョンとして記録されるので、あとからやり直せます。
 この機能には Git が必要です。入っていない場合やフォルダが Git 管理でない場合は「履歴機能は使えません」と表示され、ほかの機能はそのまま使えます。
 
 **提案**（🎹 編集・再生タブの「💡 提案」）: AI に頼んだ修正案は、曲を直接書き換えず「提案」として届きます。内容・理由・歌詞の違いを見て、試聴してから、**採用**か**却下**を選びます。採用したときだけ曲に反映され、バージョンとして記録されます（採用の直前の内容も自動で残るので、あとから戻せます）。提案を出したあとに曲を直していた場合は、「🔀 重なりを確かめて採用」で、**重なっている所（セクション単位）だけ**「あなたの版」か「提案」を選びます。重ならない所は自動で合わせます（合わせた結果は YAML を作り直すので、ファイル内のコメントは消えます）。
@@ -60,6 +62,7 @@ python -m musicai migrate songs specs                   # 古い形式のファ�
 python -m musicai check songs/ramen.yaml                # 楽曲ルールの検証（先に validate も行う）
 python -m musicai render songs/ramen.yaml               # → output/ に MP3・MIDI・楽譜
 python -m musicai export songs/ramen.yaml --format midi,musicxml,lyrics   # 音を作らず書き出し（wav,mp3 も指定可）。validate と check を通った曲だけ
+python -m musicai pipeline compose specs/hajimari.yaml --name 新曲   # 作曲→検証→書き出しを一括で（失敗しても何も変わらない）
 python -m musicai mcp                                   # AI アプリ向けの MCP サーバ（下の「AI アプリから使う」）
 python -m musicai import "https://youtu.be/..." --start 45 --end 90   # YouTube / 音声ファイルを取り込む
 python -m musicai propose hoshi --yaml 修正案.yaml --title "サビを高く" --reason "…"   # 修正案を提案として出す（AI 用）
@@ -124,9 +127,10 @@ tests/   python -m unittest discover -s tests
 | `kaeuta` | 保存済みの曲の歌詞を差し替え、メロディを自動調整して保存 |
 | `validate` | ファイル構造をスキーマで検証（`check: true` で楽曲ルールの警告も） |
 | `export` | `output/` に MIDI・楽譜・歌詞カード（`wav`・`mp3` も指定可）を書き出し |
+| `make_song` | 作曲（または替え歌）→ `validate` → `check` → 書き出しを**一括で**。失敗しても `songs/` と `output/` は変わらない |
 
 安全のため、書き込むのは `songs/` と `output/` の中だけです。同名の曲は `overwrite: true` を付けないと上書きしません。
-`export` は `validate` と `check`（警告ゼロ）を通らない曲は書き出しません。
+`export` と `make_song` は `validate` と `check`（警告ゼロ）を通らない曲は書き出しません。`make_song` は、途中のどこで失敗しても `songs/` と `output/` を変えません（上書きするときは、上書き前の内容を自動でバージョンに残します）。
 
 接続の例（このフォルダで実行）:
 

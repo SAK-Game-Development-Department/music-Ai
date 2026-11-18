@@ -656,8 +656,55 @@ function hRender() {
     return h("li", {}, h("label", { class: "inline", for: "h-v" + v.no }, cb,
       h("b", {}, `バージョン ${v.no}`), h("span", { class: "muted" }, ` ${fmtAt(v.at)}`)),
       v.note ? h("div", { class: "note" }, v.note) : null,
-      h("div", { class: "muted" }, v.summary));
+      h("div", { class: "muted" }, v.summary),
+      h("div", { class: "vtools" }, h("button", { class: "ghost chip", title: "この時点の内容に戻します（戻したことも新しいバージョンとして残ります）",
+        onclick: () => hRestore(v.no) }, "↩ このバージョンに戻す")));
   }));
+}
+
+async function hRestore(no) {
+  if (!E.cur) return;
+  if (!confirm(`バージョン ${no} の内容に戻しますか？\n\n・今の内容がまだバージョンになっていなければ、先に自動で残します\n・戻したことも新しいバージョンとして記録されるので、あとからやり直せます`)) return;
+  if (!(await eSave(E.cur.name))) return;  // 作業中の編集を先にファイルへ（失うものが無いように）
+  const r = await busy("戻しています…", () => api("/api/version/restore", { name: E.cur.name, no })).catch(() => null);
+  if (!r) return;
+  if (r.available === false) return hOff(r.message);
+  await eLoad(E.cur.name);  // 画面を、戻した内容で読み直す（バージョン一覧も更新される）
+  toast(r.message + (r.auto_saved ? `（戻す前の内容は、バージョン ${r.auto_saved} に残しました）` : ""));
+}
+
+async function hCompare(a, b) {
+  $("#e-audio").pause();
+  const mute = $("#e-karaoke").checked ? ["vocal"] : [];
+  const rs = await busy("2 つのバージョンの音を作っています…（1 分ほどかかることがあります）", async () => {
+    const ra = await api("/api/version/render", { name: H.name, no: a, mute });
+    const rb = await api("/api/version/render", { name: H.name, no: b, mute });
+    return [ra, rb];
+  }).catch(() => null);
+  if (!rs) return;
+  if (rs.some((r) => r.available === false)) return hOff(rs[0].message);
+  const mk = (r, label) => {
+    const f = r.files.mp3 || r.files.wav;
+    const au = h("audio", { controls: true, preload: "auto", src: "/output/" + encodeURIComponent(f) + "?t=" + Date.now() });
+    return { label, au };
+  };
+  const A = mk(rs[0], `バージョン ${a}`), B = mk(rs[1], `バージョン ${b}`);
+  const switchTo = (to, from) => {  // 同じ位置から、もう一方に切り替えて続きを聴く
+    const t = from.au.currentTime;
+    from.au.pause();
+    to.au.currentTime = t;
+    to.au.play().catch(() => {});
+  };
+  const box = h("div", { class: "ab" },
+    h("h3", {}, "🎧 聴き比べ"),
+    h("p", { class: "hint" }, "再生中に切り替えると、同じ位置から続きが聞けます。"),
+    h("div", { class: "row gap wrap" },
+      h("button", { class: "primary", onclick: () => switchTo(A, B) }, `${A.label} を聴く`),
+      h("button", { class: "primary", onclick: () => switchTo(B, A) }, `${B.label} を聴く`)),
+    h("div", { class: "abplayers" },
+      h("div", {}, h("div", { class: "muted" }, A.label), A.au), h("div", {}, h("div", { class: "muted" }, B.label), B.au)));
+  $("#h-diff").querySelector(".ab")?.remove();
+  $("#h-diff").append(box);
 }
 
 async function hDiff() {
@@ -667,6 +714,7 @@ async function hDiff() {
   const box = $("#h-diff");
   const changed = r.sections.filter((s) => s.changed);
   box.replaceChildren(h("h3", {}, `バージョン ${a} → バージョン ${b} の歌詞の違い`),
+    h("div", { class: "vtools" }, h("button", { class: "ghost", onclick: () => hCompare(a, b) }, "🎧 この 2 つを聴き比べ")),
     !changed.length ? h("p", { class: "muted" }, "歌詞に違いはありません。") : null,
     ...changed.map((s) => h("div", { class: "dsec" },
       h("b", {}, `【${s.name}】`), s.status === "added" ? h("span", { class: "muted" }, " （このパートが追加されました）") : null,
