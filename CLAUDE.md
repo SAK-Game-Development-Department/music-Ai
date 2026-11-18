@@ -23,3 +23,13 @@
 
 ## テスト
 `python -m unittest discover -s tests`
+
+## プロンプトテンプレート（`prompts/`）
+AI に作曲・修正・レビューを頼むときは、次のテンプレートを渡す（どれも `schemas/*.json` と `schema_version: 1`、
+出力形式、書き出し前の `validate` → `check`、歌詞の読み指定・melody 記法の規則を含む）。上の手順はそのまま有効。
+- 新しい曲の作曲仕様を作る: `prompts/compose.md`
+- 既存の曲を理論的な理由つきで直す: `prompts/revise.md`
+- 曲を理論・モーラ数・スキーマの観点でレビューする: `prompts/review.md`
+
+ファイル構造の検証は `python -m musicai validate <path>`、楽曲ルールの検証は `check`（`check` は先に `validate` を行う）。
+スキーマ通過率の測り方は `docs/04_プロンプトの使い方と測定.md`。
