@@ -32,7 +32,7 @@ class HandleTest(unittest.TestCase):
 
     def test_tools_list(self):
         r = mcp_server.handle(rpc(3, "tools/list"))["result"]["tools"]
-        self.assertEqual([t["name"] for t in r], ["compose", "kaeuta", "validate", "export"])
+        self.assertEqual([t["name"] for t in r], ["compose", "kaeuta", "validate", "export", "make_song"])
         for t in r:
             self.assertTrue(t["description"])
             self.assertEqual(t["inputSchema"]["type"], "object")
@@ -100,7 +100,7 @@ class SubprocessTest(unittest.TestCase):
                            input="\n".join(json.dumps(m) for m in msgs) + "\n", timeout=60)
         replies = [json.loads(x) for x in p.stdout.splitlines()]  # 標準出力は JSON だけ
         self.assertEqual([r["id"] for r in replies], [1, 2, 3])
-        self.assertEqual(len(replies[1]["result"]["tools"]), 4)
+        self.assertEqual(len(replies[1]["result"]["tools"]), 5)
         self.assertFalse(json.loads(replies[2]["result"]["content"][0]["text"])["ok"])
 
 
