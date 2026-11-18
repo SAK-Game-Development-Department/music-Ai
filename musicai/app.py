@@ -22,7 +22,7 @@ from .lyrics import phrases, split_mora
 from .song import song_from_dict
 from .theory import PROGRESSIONS, parse_key, progression_to_chords
 
-WEB_DIR = Path(__file__).resolve().parent / "web"
+WEB_DIR = service.RESOURCE_DIR / "musicai" / "web" if service.FROZEN else Path(__file__).resolve().parent / "web"
 _render_lock = threading.Lock()
 
 
@@ -208,6 +208,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def run(port: int = 8765, open_browser: bool = True):
+    service.ensure_data_dirs()
     server = None
     for p in range(port, port + 20):
         try:
@@ -222,6 +223,7 @@ def run(port: int = 8765, open_browser: bool = True):
     print("=" * 50)
     print(" 🎵 music-Ai を起動しました")
     print(f"   ブラウザで開く: {url}")
+    print(f"   曲の保存先: {service.SONGS_DIR}")
     print("   終了するにはこのウィンドウを閉じるか Ctrl+C")
     print("=" * 50)
     if open_browser:

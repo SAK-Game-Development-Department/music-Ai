@@ -278,10 +278,25 @@ def write_wav(audio: np.ndarray, path: str | Path) -> None:
         w.writeframes(data.tobytes())
 
 
+def _ffmpeg() -> str:
+    """ffmpeg の場所。exe の隣（または本体フォルダ）に ffmpeg.exe があればそれを使う。"""
+    import shutil
+    import sys
+
+    base = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
+    for name in ("ffmpeg.exe", "ffmpeg"):
+        if (base / name).is_file():
+            return str(base / name)
+    return shutil.which("ffmpeg") or "ffmpeg"
+
+
 def wav_to_mp3(wav: str | Path, mp3: str | Path) -> bool:
+    import sys
+
+    flags = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
     try:
-        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(wav), "-b:a", "192k", str(mp3)],
-                       check=True)
+        subprocess.run([_ffmpeg(), "-y", "-loglevel", "error", "-i", str(wav), "-b:a", "192k", str(mp3)],
+                       check=True, creationflags=flags)
         return True
     except (FileNotFoundError, subprocess.CalledProcessError):
         return False
