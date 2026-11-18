@@ -17,7 +17,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import yaml
 
-from . import history, service
+from . import history, proposals, service
 from .composer import compose
 from .lyrics import phrases, split_mora
 from .song import song_from_dict
@@ -114,6 +114,45 @@ def api_version_save(_q, b):
     except history.HistoryUnavailable:
         return _unavailable()
     return {"available": True, "name": name, **r}
+
+
+def _proposals() -> proposals.Proposals:
+    return proposals.Proposals(service.PROPOSALS_DIR, service.SONGS_DIR)
+
+
+def api_proposals(q, _b):
+    song = q.get("song", [""])[0]
+    return {"song": service.safe_name(song), "proposals": _proposals().list(song)}
+
+
+def api_proposal(q, _b):
+    return _proposals().get(q.get("song", [""])[0], int(q.get("id", [""])[0]))
+
+
+def api_proposal_submit(_q, b):
+    return _proposals().submit(b.get("song", ""), b.get("yaml", ""), b.get("title", ""), b.get("reason", ""))
+
+
+def api_proposal_adopt(_q, b):
+    return _proposals().adopt(b.get("song", ""), int(b.get("id")), _history())
+
+
+def api_proposal_reject(_q, b):
+    return _proposals().reject(b.get("song", ""), int(b.get("id")))
+
+
+def api_proposal_render(_q, b):
+    """提案の内容を音にする（試聴用。曲のファイルは変えない）。"""
+    pid = int(b.get("id"))
+    name = service.safe_name(b.get("song", ""))
+    song = song_from_dict(_load_yaml_text(_proposals().yaml_of(name, pid)))
+    stem = f"{name}_提案{pid}"
+    mute = set(b.get("mute") or [])
+    if mute:
+        stem += "_" + "_".join(sorted(mute)) + "なし"
+    with _render_lock:
+        files = service.render_song(song, stem, mute)
+    return {"song": name, "id": pid, "files": files}
 
 
 def api_render(_q, b):
@@ -250,6 +289,12 @@ ROUTES = {
     ("GET", "/api/history"): api_history,
     ("GET", "/api/history/diff"): api_history_diff,
     ("POST", "/api/version/save"): api_version_save,
+    ("GET", "/api/proposals"): api_proposals,
+    ("GET", "/api/proposal"): api_proposal,
+    ("POST", "/api/proposal/submit"): api_proposal_submit,
+    ("POST", "/api/proposal/adopt"): api_proposal_adopt,
+    ("POST", "/api/proposal/reject"): api_proposal_reject,
+    ("POST", "/api/proposal/render"): api_proposal_render,
     ("POST", "/api/render"): api_render,
     ("POST", "/api/compose"): api_compose,
     ("POST", "/api/kaeuta"): api_kaeuta,
