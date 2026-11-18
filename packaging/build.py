@@ -23,4 +23,4 @@ args = [
 ]
 print(" ".join(args))
 subprocess.run(args, check=True)
-print("\n完成:", ROOT / "dist")
+print("\nBuild complete:", ROOT / "dist")
