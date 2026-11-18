@@ -17,6 +17,7 @@ import random
 from fractions import Fraction
 
 from .lyrics import phrases, split_mora
+from .migrate import CURRENT_VERSION
 from .song import Note, SongError, default_energy, melody_to_text, parse_chords, save_song_dict
 from .theory import Key, parse_chord, parse_key, progression_to_chords, scale_pitches
 
@@ -256,6 +257,7 @@ def compose(spec: dict) -> dict:
         sec, prev = compose_section(name, sspec, key, bpb, style, rng, prev, name == last_vocal)
         out_secs[name] = sec
     return {
+        "schema_version": CURRENT_VERSION,
         "title": spec.get("title", "untitled"),
         "key": key.name(),
         "tempo": spec.get("tempo", 120),

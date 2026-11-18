@@ -32,6 +32,9 @@ pip install -r requirements.txt
 python -m musicai app                                   # アプリ起動
 python -m musicai compose specs/hajimari.yaml           # 作曲
 python -m musicai kaeuta songs/hoshi.yaml --lyrics-file lyrics/ramen.yaml -o songs/ramen.yaml
+python -m musicai validate songs specs                  # ファイル構造の検証（schemas/ に沿っているか）
+python -m musicai migrate songs specs                   # 古い形式のファイルに schema_version を付ける
+python -m musicai check songs/ramen.yaml                # 楽曲ルールの検証（先に validate も行う）
 python -m musicai render songs/ramen.yaml               # → output/ に MP3・MIDI・楽譜
 python -m musicai mora "きょうはいいてんき"              # モーラを数える
 python -m musicai progressions --key G                  # 定番進行
@@ -57,11 +60,14 @@ musicai/
   theory.py    音名・キー・コード・ディグリー・定番進行
   lyrics.py    歌詞 → モーラ分割（かな / {漢字|よみ} / 英語）
   song.py      曲ファイル（YAML）の読み込み・検証
+  schema.py    ファイル構造の検証（schemas/*.schema.json）
+  migrate.py   古い形式のファイルを最新にする（schema_version）
   composer.py  歌詞 + 進行 → メロディ自動生成
   kaeuta.py    替え歌（歌詞差し替え + メロディ自動調整）
   arrange.py   伴奏の自動アレンジ（pop / ballad / rock / simple）
   synth.py     音源合成（母音で歌う仮歌シンセ + 楽器）
   export.py    MIDI / MusicXML / 歌詞カード
+schemas/ 曲・作曲仕様の JSON Schema（人間・AI・CLI 共通の約束事）
 songs/   保存した曲（アプリの曲リスト）
 lyrics/  替え歌用の歌詞ファイル
 specs/   作曲仕様（歌詞・進行・構成だけ書いたもの）

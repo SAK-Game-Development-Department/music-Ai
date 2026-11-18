@@ -129,7 +129,16 @@ def render_song(song: Song, stem: str, mute: set[str] | None = None, audio: bool
 
 
 def save_song_text(name: str, text: str) -> Path:
-    yaml.safe_load(text)  # 構文チェック
+    from .migrate import migrate_text
+    from .schema import validate_data
+
+    data = yaml.safe_load(text)  # 構文チェック
+    if not isinstance(data, dict):
+        raise ValueError("曲データの形式が正しくありません")
+    text, _, _ = migrate_text(text)  # 古い形式には schema_version を補う（コメントは保つ）
+    result = validate_data(yaml.safe_load(text), "song")
+    if not result.ok:
+        raise ValueError("曲データの形式が正しくありません:\n" + result.format())
     SONGS_DIR.mkdir(exist_ok=True)
     p = SONGS_DIR / f"{safe_name(name)}.yaml"
     p.write_text(text, encoding="utf-8")

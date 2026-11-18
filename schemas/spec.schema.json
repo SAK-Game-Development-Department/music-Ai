@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "musicai/spec.schema.json",
+  "title": "musicai 作曲仕様 (specs/*.yaml)",
+  "type": "object",
+  "required": ["schema_version", "sections"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"type": "integer", "minimum": 1, "description": "ファイル形式のバージョン。現在は 1"},
+    "title": {"type": "string"},
+    "key": {"type": "string", "description": "例: G major"},
+    "tempo": {"type": "number", "exclusiveMinimum": 0},
+    "time": {"type": "string", "pattern": "^[0-9]+/[0-9]+$"},
+    "style": {"enum": ["pop", "ballad", "rock", "simple"]},
+    "seed": {"type": "integer", "description": "変えると別のメロディ案になる"},
+    "structure": {"type": "array", "items": {"type": "string"}},
+    "sections": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"$ref": "#/$defs/section"}
+    }
+  },
+  "$defs": {
+    "section": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "progression": {"type": "string", "description": "進行名・ディグリー・コード名のいずれか"},
+        "chords": {"type": "string", "description": "progression の代わりにコードを直接書く"},
+        "chords_per_bar": {"type": "integer", "minimum": 1},
+        "lyrics": {"type": "string"},
+        "bars": {"type": "integer", "minimum": 1},
+        "phrase_bars": {"type": "integer", "minimum": 1},
+        "energy": {"enum": ["low", "mid", "high"]},
+        "register": {"enum": ["low", "mid", "high"]},
+        "transpose_range": {"type": "integer", "description": "音域を半音単位でずらす"},
+        "base": {"type": "string"},
+        "fit": {"type": "boolean"}
+      }
+    }
+  }
+}
