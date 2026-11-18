@@ -56,9 +56,9 @@ def _warnings(song) -> list[str]:
 
 
 # ---------------------------------------------------------------- compose
-def compose(args: dict) -> dict:
+def compose_data(args: dict) -> tuple[str, dict]:
+    """作曲仕様 → (保存名, 曲の辞書)。何も保存しない。"""
     from .composer import compose as compose_spec
-    from .song import check_report, song_from_dict
 
     if ("spec" in args) == ("spec_name" in args):
         raise ToolError("spec（仕様そのもの）か spec_name（specs/ にあるファイル名）のどちらか 1 つを指定してください")
@@ -76,7 +76,13 @@ def compose(args: dict) -> dict:
     if not r.ok:
         raise ToolError("作曲仕様の形式が正しくありません:\n" + r.format())
     data = compose_spec(spec)
-    name = args.get("name") or data.get("title") or "untitled"
+    return args.get("name") or data.get("title") or "untitled", data
+
+
+def compose(args: dict) -> dict:
+    from .song import check_report, song_from_dict
+
+    name, data = compose_data(args)
     _ensure_free(name, bool(args.get("overwrite")))
     song = song_from_dict(data)  # 楽曲として読めるか（読めなければここで ValueError）
     path = service.save_song_text(name, service.dump_yaml(data))
@@ -84,9 +90,8 @@ def compose(args: dict) -> dict:
 
 
 # ---------------------------------------------------------------- kaeuta
-def kaeuta(args: dict) -> dict:
-    from .song import song_from_dict
-
+def kaeuta_data(args: dict) -> tuple[str, dict, list[str]]:
+    """保存済みの曲 + 新しい歌詞 → (保存名, 曲の辞書, 調整レポート)。何も保存しない。"""
     src = _song_file(args["song"])
     lyrics = args["lyrics"]
     if not lyrics:
@@ -96,7 +101,13 @@ def kaeuta(args: dict) -> dict:
         new, report = service.kaeuta(data, lyrics, args.get("title"))
     except ValueError as e:
         raise ToolError(str(e)) from None
-    name = args.get("name") or f"{src.stem}_kaeuta"
+    return args.get("name") or f"{src.stem}_kaeuta", new, report
+
+
+def kaeuta(args: dict) -> dict:
+    from .song import song_from_dict
+
+    name, new, report = kaeuta_data(args)
     _ensure_free(name, bool(args.get("overwrite")))
     song = song_from_dict(new)
     path = service.save_song_text(name, service.dump_yaml(new))
@@ -170,6 +181,13 @@ def export(args: dict) -> dict:
     return res
 
 
+def make_song(args: dict) -> dict:
+    """生成 → 検証 → 書き出しを一括で行う（失敗したら songs/ と output/ は変わらない）。詳しくは pipeline.py。"""
+    from . import pipeline
+
+    return pipeline.run(args)
+
+
 # ---------------------------------------------------------------- 登録（MCP の tools/list が使う）
 _NAME = {"type": "string", "description": "曲の名前（songs/<名前>.yaml の「名前」の部分）"}
 
@@ -230,6 +248,29 @@ TOOLS: dict[str, dict] = {
             },
         },
         "run": export,
+    },
+    "make_song": {
+        "description": "作曲（mode=compose）または替え歌（mode=kaeuta）から、validate → check（警告ゼロ）→ 書き出しまでを"
+                       "1 回で行う。途中で失敗したら songs/ と output/ は変わらない（反映の途中の失敗は元に戻す）。"
+                       "compose は spec か spec_name、kaeuta は song と lyrics を渡す。",
+        "inputSchema": {
+            "type": "object", "additionalProperties": False, "required": ["mode"],
+            "properties": {
+                "mode": {"enum": ["compose", "kaeuta"], "description": "compose（作曲）か kaeuta（替え歌）"},
+                "spec": {"type": "object", "description": "[compose] 作曲仕様そのもの"},
+                "spec_name": {"type": "string", "description": "[compose] specs/<名前>.yaml の名前"},
+                "song": {"type": "string", "description": "[kaeuta] 元の曲の名前"},
+                "lyrics": {"type": "object", "additionalProperties": {"type": "string"},
+                           "description": "[kaeuta] セクション名: 新しい歌詞"},
+                "title": {"type": "string", "description": "[kaeuta] 替え歌のタイトル"},
+                "name": {"type": "string", "description": "保存する曲の名前（省略時は、作曲はタイトル、替え歌は <元の名前>_kaeuta）"},
+                "formats": {"type": "array", "items": {"enum": EXPORT_FORMATS},
+                            "description": "書き出す形式。既定は midi・musicxml・lyrics。wav・mp3 は時間がかかる"},
+                "allow_warnings": {"type": "boolean", "description": "check の警告があっても進める（既定 false）"},
+                "overwrite": {"type": "boolean", "description": "同名の曲を上書きする（既定 false）。上書き前の内容は自動でバージョンに残る"},
+            },
+        },
+        "run": make_song,
     },
 }
 

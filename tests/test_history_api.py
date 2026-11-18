@@ -46,6 +46,31 @@ class HistoryApiTest(unittest.TestCase):
         for w in ("commit", "branch", "hash"):
             self.assertNotIn(w, blob.lower())
 
+    def test_restore_and_render_version(self):
+        app.api_version_save({}, {"name": "s", "note": "元"})
+        (self.songs / "s.yaml").write_text(SONG_V2, encoding="utf-8")
+        app.api_version_save({}, {"name": "s"})
+        # 比較試聴: 作業中のファイルは変えずに、バージョンの内容を別名で音にする
+        with mock.patch.object(service, "OUTPUT_DIR", self.songs.parent / "output"):
+            r = app.api_version_render({}, {"name": "s", "no": 1})
+            r2 = app.api_version_render({}, {"name": "s", "no": 2, "mute": ["vocal"]})
+        self.assertEqual((r["no"], r["files"]["midi"]), (1, "s_v1.mid"))
+        self.assertTrue(r2["files"]["midi"].startswith("s_v2_vocal"))
+        self.assertTrue((self.songs.parent / "output" / "s_v1.mid").is_file())
+        self.assertEqual((self.songs / "s.yaml").read_text(encoding="utf-8"), SONG_V2)  # 作業中のファイルはそのまま
+        # 復元
+        r = app.api_version_restore({}, {"name": "s", "no": 1})
+        self.assertEqual((r["restored"], r["no"]), (True, 3))
+        self.assertEqual((self.songs / "s.yaml").read_text(encoding="utf-8"), SONG_V1)
+        blob = json.dumps([r, r2], ensure_ascii=False)
+        self.assertNotRegex(blob, r"[0-9a-f]{7,40}")
+        for w in ("commit", "branch", "hash"):
+            self.assertNotIn(w, blob.lower())
+        with self.assertRaises(ValueError):
+            app.api_version_restore({}, {"name": "s", "no": 99})
+        with self.assertRaises(ValueError):
+            app.api_version_render({}, {"name": "s", "no": "x"})
+
     def test_bad_input_is_value_error(self):
         app.api_version_save({}, {"name": "s"})
         with self.assertRaises(ValueError):
@@ -61,6 +86,8 @@ class HistoryApiTest(unittest.TestCase):
             self.assertEqual(app.api_history({"name": ["s"]}, {}), msg)
             self.assertEqual(app.api_history_diff({"name": ["s"], "a": ["1"], "b": ["2"]}, {}), msg)
             self.assertEqual(app.api_version_save({}, {"name": "s"}), msg)
+            self.assertEqual(app.api_version_restore({}, {"name": "s", "no": 1}), msg)
+            self.assertEqual(app.api_version_render({}, {"name": "s", "no": 1}), msg)
             self.assertNotIn("error", app.api_history({"name": ["s"]}, {}))
 
 
