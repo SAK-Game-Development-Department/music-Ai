@@ -29,6 +29,33 @@ class MigrateTest(unittest.TestCase):
         new, _, _ = migrate_text(OLD.replace("\n", "\r\n"))
         self.assertIn("schema_version: 1\r\n", new)
 
+    def test_bom_and_document_marker(self):
+        new, _, _ = migrate_text("\ufeff" + OLD)
+        self.assertTrue(new.startswith("\ufeff# 説明コメント"))
+        self.assertEqual(yaml.safe_load(new)["schema_version"], 1)
+        self.assertIn("title", yaml.safe_load(new))  # キー名が壊れていない
+        new, _, _ = migrate_text("# c\n---\ntitle: x\nsections: {A: {chords: C}}\n")
+        self.assertEqual(yaml.safe_load(new)["schema_version"], 1)
+        self.assertTrue(new.index("---") < new.index("schema_version"))
+
+    def test_unreadable_yaml_is_value_error(self):
+        with self.assertRaises(ValueError):
+            migrate_text("{title: x, sections: {A: \n")
+        with self.assertRaises(ValueError):
+            migrate_text("a: 1\n---\nb: 2\n")  # 複数ドキュメント
+
+    def test_cli_continues_after_failure(self):
+        import contextlib, io
+        from musicai.__main__ import main
+        with tempfile.TemporaryDirectory() as d:
+            bad, good = Path(d) / "a.yaml", Path(d) / "b.yaml"
+            bad.write_text("- 1\n", encoding="utf-8")
+            good.write_text(OLD, encoding="utf-8")
+            with contextlib.redirect_stdout(io.StringIO()) as out, self.assertRaises(SystemExit):
+                main(["migrate", str(d)])
+            self.assertIn("失敗", out.getvalue())
+            self.assertEqual(file_version(good.read_text(encoding="utf-8")), 1)  # 後ろのファイルも移行された
+
     def test_errors(self):
         with self.assertRaises(ValueError):
             migrate_text("- a\n")

@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +11,7 @@ from musicai import app, service
 from tests.test_history import SONG_V1, SONG_V2, git
 
 
+@unittest.skipUnless(shutil.which("git"), "git が無い環境では履歴のテストを飛ばす")
 class HistoryApiTest(unittest.TestCase):
     def setUp(self):
         self._td = tempfile.TemporaryDirectory()

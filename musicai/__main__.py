@@ -80,12 +80,20 @@ def cmd_migrate(a):
     files = _expand(a.path)
     if not files:
         sys.exit("エラー: 対象のファイルがありません")
-    for f in files:
-        before, after = migrate_file(f, a.dry_run)
+    bad = 0
+    for f in files:  # 1 つ失敗しても残りは続ける
+        try:
+            before, after = migrate_file(f, a.dry_run)
+        except ValueError as e:
+            bad += 1
+            print(f"失敗    {f}（{e}）")
+            continue
         if before == after:
             print(f"変更なし  {f}（バージョン {after}）")
         else:
             print(f"{'移行できます' if a.dry_run else '移行しました'}  {f}（{before} → {after}）")
+    if bad:
+        sys.exit(f"{len(files)} 件中 {bad} 件を移行できませんでした")
 
 
 def cmd_check(a):
