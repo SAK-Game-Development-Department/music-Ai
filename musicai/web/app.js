@@ -292,7 +292,7 @@ $("#c-go").addEventListener("click", async () => {
 const K = { song: null };
 async function kLoad() {
   const name = $("#k-song").value;
-  if (!name) { $("#k-sections").replaceChildren(h("p", { class: "muted" }, "曲がありません。")); return; }
+  if (!name) { $("#k-sections").replaceChildren(h("p", { class: "muted" }, "まだ曲がありません。① で YouTube・音声ファイルから読み込むと、ここに歌詞を書く欄が出ます。")); return; }
   if (K.song && K.song.name === name) return;
   K.song = await api("/api/song?name=" + encodeURIComponent(name));
   $("#k-title").placeholder = K.song.view.title + "（替え歌）";

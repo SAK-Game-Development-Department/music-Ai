@@ -20,6 +20,30 @@ class AudioError(RuntimeError):
     pass
 
 
+def ensure_package(module: str, pip_spec: str, progress=None):
+    """module が無ければ pip で入れてから import する（ソースから動かしている場合のみ）。
+
+    exe / アプリ版には最初から同梱されているので入れない。
+    """
+    import importlib
+
+    try:
+        return importlib.import_module(module)
+    except ImportError:
+        if getattr(sys, "frozen", False):
+            raise
+    if progress:
+        progress(f"初回のみ: 必要なツール（{pip_spec.split('[')[0]}）をインストールしています…")
+    p = subprocess.run([sys.executable, "-m", "pip", "install", pip_spec], capture_output=True,
+                       creationflags=_NO_WINDOW)
+    if p.returncode != 0:
+        raise AudioError(f"{pip_spec} を自動でインストールできませんでした。コマンドプロンプトで "
+                         f"「py -m pip install -r requirements.txt」を実行してから、アプリを起動し直してください。\n"
+                         + p.stderr.decode("utf-8", "replace")[-300:])
+    importlib.invalidate_caches()
+    return importlib.import_module(module)
+
+
 def ffmpeg_exe() -> str:
     base = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
     for name in ("ffmpeg.exe", "ffmpeg"):
@@ -32,9 +56,12 @@ def ffmpeg_exe() -> str:
     except Exception:
         pass
     exe = shutil.which("ffmpeg")
-    if not exe:
-        raise AudioError("ffmpeg が見つかりません（pip install imageio-ffmpeg で入ります）")
-    return exe
+    if exe:
+        return exe
+    try:
+        return ensure_package("imageio_ffmpeg", "imageio-ffmpeg").get_ffmpeg_exe()
+    except Exception:
+        raise AudioError("ffmpeg が見つかりません。「py -m pip install -r requirements.txt」を実行してください")
 
 
 def load_audio(path: str | Path, sr: int = 22050, start: float = 0.0, end: float | None = None,
@@ -75,9 +102,9 @@ def is_url(text: str) -> bool:
 def download_audio(url: str, out_dir: Path, progress=None) -> tuple[Path, str]:
     """yt-dlp で音声だけをダウンロード。(ファイル, タイトル) を返す。"""
     try:
-        import yt_dlp
+        yt_dlp = ensure_package("yt_dlp", "yt-dlp[default]", progress)
     except ImportError:
-        raise AudioError("yt-dlp が入っていません（pip install yt-dlp）")
+        raise AudioError("YouTube の取得に使う yt-dlp が入っていません。音声ファイルを選んで取り込んでください")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     def hook(d):

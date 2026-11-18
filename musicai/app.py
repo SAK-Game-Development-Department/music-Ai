@@ -235,7 +235,7 @@ def api_import_info(_q, _b):
         import yt_dlp  # noqa: F401
         ytdlp = True
     except ImportError:
-        ytdlp = False
+        ytdlp = not service.FROZEN  # ソース版は必要になったとき自動でインストールする
     return {"ytdlp": ytdlp, "demucs": demucs_available()}
 
 
