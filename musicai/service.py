@@ -6,15 +6,49 @@ import re
 from fractions import Fraction
 from pathlib import Path
 
+import numpy as np
 import yaml
 
 from .lyrics import phrases, split_mora
 from .song import Song, check_report, melody_to_text, parse_melody, save_song_dict, song_from_dict, _resolve_spec
 
-ROOT = Path(__file__).resolve().parent.parent
-SONGS_DIR = ROOT / "songs"
-SPECS_DIR = ROOT / "specs"
-OUTPUT_DIR = ROOT / "output"
+import shutil
+import sys
+
+FROZEN = getattr(sys, "frozen", False)  # exe として動いているか
+# RESOURCE_DIR: 同梱ファイル（画面・サンプル曲）。DATA_DIR: 保存先（exe の隣）
+RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+DATA_DIR = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent.parent
+
+
+def _writable(d: Path) -> bool:
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        t = d / ".write_test"
+        t.write_text("ok")
+        t.unlink()
+        return True
+    except OSError:
+        return False
+
+
+# exe の隣に書き込めない場合（Mac のダウンロード直後・/usr/bin など）はホームフォルダへ
+if FROZEN and not _writable(DATA_DIR):
+    DATA_DIR = Path.home() / "music-Ai"
+ROOT = DATA_DIR
+SONGS_DIR = DATA_DIR / "songs"
+SPECS_DIR = DATA_DIR / "specs"
+OUTPUT_DIR = DATA_DIR / "output"
+
+
+def ensure_data_dirs() -> None:
+    """exe 初回起動時、サンプル曲を exe の隣の songs/ にコピーする。"""
+    SONGS_DIR.mkdir(parents=True, exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    bundled = RESOURCE_DIR / "songs"
+    if FROZEN and bundled.is_dir() and not any(SONGS_DIR.glob("*.yaml")):
+        for f in bundled.glob("*.yaml"):
+            shutil.copy2(f, SONGS_DIR / f.name)
 
 
 def safe_name(name: str) -> str:
@@ -64,6 +98,12 @@ def kaeuta(data: dict, new_lyrics: dict[str, str], title: str | None = None) -> 
     return new, report
 
 
+def _mel_phrase_counts(notes) -> list[int]:
+    from .kaeuta import melody_phrases
+
+    return [sum(1 for i in g if not notes[i].is_rest and not notes[i].melisma) for g in melody_phrases(notes)]
+
+
 def song_view(song: Song) -> dict:
     """GUI 表示用: セクション・ピアノロール・歌詞情報。"""
     secs = []
@@ -94,6 +134,7 @@ def song_view(song: Song) -> dict:
             "lyrics": sec.lyrics_text,
             "phrases": lyr_phr,
             "sung": sum(1 for n in sec.notes if not n.is_rest and not n.melisma),
+            "mel_phrases": _mel_phrase_counts(sec.notes),
             "has_melody": any(not n.is_rest for n in sec.notes),
         })
     warnings = [w for s in song.sections.values() for w in s.warnings]
@@ -102,30 +143,148 @@ def song_view(song: Song) -> dict:
         "beats_per_bar": song.beats_per_bar, "structure": song.structure, "timeline": timeline,
         "sections": secs, "warnings": warnings, "report": check_report(song),
         "duration_sec": float(song.total_beats) * 60 / song.tempo,
+        "accompaniment": accompaniment_mode(song),
+        "source": _source_view(song),
     }
 
 
-def render_song(song: Song, stem: str, mute: set[str] | None = None, audio: bool = True) -> dict:
-    from .arrange import arrange
-    from .export import lyric_sheet, write_midi, write_musicxml
-    from .synth import render, wav_to_mp3, write_wav
+def _source_view(song: Song) -> dict | None:
+    src = source_info(song)
+    if not src:
+        return None
+    orig = src.get("original")
+    rel = None
+    if orig and Path(orig).is_file() and Path(orig).is_relative_to(DATA_DIR):
+        rel = Path(orig).relative_to(DATA_DIR).as_posix()
+    return {"from": song.raw["source"].get("from"), "offset": src["offset"], "original_url": "/data/" + rel if rel else None}
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+def source_info(song: Song) -> dict | None:
+    """取り込んだ曲なら、元音源の情報 {backing, original, offset} を返す（パスは絶対パス）。"""
+    src = song.raw.get("source")
+    if not isinstance(src, dict) or not src.get("backing"):
+        return None
+    out = dict(src)
+    for k in ("backing", "original"):
+        if out.get(k):
+            p = Path(out[k])
+            out[k] = p if p.is_absolute() else DATA_DIR / p
+    out["offset"] = float(out.get("offset", 0))
+    return out
+
+
+def accompaniment_mode(song: Song) -> str:
+    """generated（自動アレンジ）/ source（元の音源）/ both"""
+    mode = str(song.raw.get("accompaniment", "source" if source_info(song) else "generated"))
+    return mode if mode in ("generated", "source", "both") else "generated"
+
+
+def render_song(song: Song, stem: str, mute: set[str] | None = None, audio: bool = True,
+                out_dir: Path | None = None) -> dict:
+    from .arrange import Arrangement, arrange
+    from .export import lyric_sheet, write_midi, write_musicxml
+    from .synth import SR, render, wav_to_mp3, write_wav
+
+    out_dir = Path(out_dir or OUTPUT_DIR)
+    out_dir.mkdir(parents=True, exist_ok=True)
     arr = arrange(song)
     files = {}
-    write_midi(song, arr, OUTPUT_DIR / f"{stem}.mid")
+    write_midi(song, arr, out_dir / f"{stem}.mid")
     files["midi"] = f"{stem}.mid"
-    write_musicxml(song, OUTPUT_DIR / f"{stem}.musicxml")
+    write_musicxml(song, out_dir / f"{stem}.musicxml")
     files["musicxml"] = f"{stem}.musicxml"
-    (OUTPUT_DIR / f"{stem}_歌詞.txt").write_text(lyric_sheet(song), encoding="utf-8")
+    (out_dir / f"{stem}_歌詞.txt").write_text(lyric_sheet(song), encoding="utf-8")
     files["lyrics"] = f"{stem}_歌詞.txt"
     if audio:
-        wav = OUTPUT_DIR / f"{stem}.wav"
-        write_wav(render(arr, song.tempo, mute), wav)
+        backing = None
+        src = source_info(song)
+        mode = accompaniment_mode(song)
+        if src and mode in ("source", "both") and Path(src["backing"]).is_file():
+            from .audio_io import load_audio
+
+            dur = float(song.total_beats) * 60 / song.tempo + 2.0
+            backing = load_audio(src["backing"], SR, src["offset"], src["offset"] + dur, channels=2)
+            # 最後の 2 秒はフェードアウト
+            fade = min(backing.shape[1], 2 * SR)
+            backing[:, -fade:] *= np.linspace(1, 0, fade)
+            if mode == "source":
+                arr = Arrangement({k: v for k, v in arr.tracks.items() if k == "vocal"}, arr.total_beats)
+        wav = out_dir / f"{stem}.wav"
+        write_wav(render(arr, song.tempo, mute, backing=backing), wav)
         files["wav"] = wav.name
-        if wav_to_mp3(wav, OUTPUT_DIR / f"{stem}.mp3"):
+        if wav_to_mp3(wav, out_dir / f"{stem}.mp3"):
             files["mp3"] = f"{stem}.mp3"
     return files
+
+
+# ---------------------------------------------------------------- 取り込み（YouTube / 音声ファイル）
+IMPORTS_DIR = DATA_DIR / "imports"
+
+
+def import_song(source: str, start: float = 0.0, end: float | None = None, title: str | None = None,
+                progress=None) -> dict:
+    """YouTube URL か音声ファイルから曲を起こして songs/ に保存。{name, title, log} を返す。"""
+    import time
+
+    from .audio_io import download_audio, is_url
+    from .transcribe import analysis_to_song, analyze, make_karaoke, separate_demucs
+
+    def say(m):
+        if progress:
+            progress(m)
+
+    work = IMPORTS_DIR / time.strftime("%Y%m%d-%H%M%S")
+    work.mkdir(parents=True, exist_ok=True)
+    if is_url(source):
+        say("ダウンロードしています…")
+        path, got_title = download_audio(source.strip(), work, progress)
+    else:
+        path = Path(source)
+        if not path.is_file():
+            raise ValueError(f"ファイルが見つかりません: {source}")
+        got_title = path.stem
+    title = (title or "").strip() or got_title
+    start = max(0.0, float(start or 0))
+    end = float(end) if end else None
+    if end is not None and end <= start + 5:
+        raise ValueError("範囲が短すぎます（5 秒以上にしてください）")
+
+    vocals = None
+    sep = None
+    from .transcribe import demucs_available
+
+    if demucs_available():
+        say("ボーカルを分離しています（demucs）…数分かかることがあります")
+        sep = separate_demucs(path, work / "sep")
+        if sep:
+            vocals = sep[0]
+    an = analyze(path, start, end, vocals_path=vocals, progress=progress)
+
+    say("カラオケ音源を作っています…")
+    from .audio_io import load_audio, save_wav
+
+    backing = work / "backing.wav"
+    if sep:
+        save_wav(load_audio(sep[1], 44100, start, end), backing, 44100)
+    else:
+        make_karaoke(path, backing, start, end)
+    original = work / "original.wav"
+    save_wav(load_audio(path, 44100, start, end), original, 44100)
+
+    data = analysis_to_song(an, title)
+    rel = lambda p: p.relative_to(DATA_DIR).as_posix() if p.is_relative_to(DATA_DIR) else str(p)
+    data["accompaniment"] = "source"
+    data["source"] = {
+        "from": source if is_url(source) else Path(source).name,
+        "range": [round(start, 2), round(end, 2) if end else None],
+        "backing": rel(backing),
+        "original": rel(original),
+        "offset": round(float(an.t0), 4),
+    }
+    data = {"_note": "音源から自動で起こした曲。音符の高さ・長さは推定なので、聴き比べて直してください", **data}
+    name = save_song_text(title, dump_yaml(data)).stem
+    say("できました")
+    return {"name": name, "title": title, "log": an.log + (["カラオケ: demucs で分離"] if sep else ["カラオケ: 中央のボーカル帯域を弱めた簡易版"])}
 
 
 def save_song_text(name: str, text: str) -> Path:

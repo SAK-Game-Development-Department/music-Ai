@@ -211,9 +211,13 @@ MIX = {
 }
 
 
-def render(arr: Arrangement, tempo: float, mute: set[str] | None = None, normalize: bool = True) -> np.ndarray:
+def render(arr: Arrangement, tempo: float, mute: set[str] | None = None, normalize: bool = True,
+           backing: np.ndarray | None = None) -> np.ndarray:
+    """backing: 元の音源（カラオケ化したもの, (2, n) @SR）を伴奏として重ねる。"""
     spb = 60.0 / tempo
     total = int((arr.total_beats * spb + 2.5) * SR)
+    if backing is not None:
+        total = max(total, backing.shape[1])
     dry = np.zeros((2, total))
     wet_send = np.zeros((2, total))
     for track, events in arr.tracks.items():
@@ -260,6 +264,15 @@ def render(arr: Arrangement, tempo: float, mute: set[str] | None = None, normali
     ir = _reverb_ir()
     wet = np.stack([_fft_convolve(wet_send[0], ir[0]), _fft_convolve(wet_send[1], ir[1])])
     mix = dry + wet * 0.9
+    if backing is not None:
+        b = np.zeros((2, total))
+        n = min(total, backing.shape[1])
+        b[:, :n] = backing[:, :n]
+        voc = np.sqrt((mix ** 2).mean(axis=0))
+        active = voc > 1e-4
+        voc_rms = float(np.sqrt((mix[:, active] ** 2).mean())) if active.any() else 0.05
+        b_rms = float(np.sqrt((b ** 2).mean())) or 1.0
+        mix = mix + b * (1.3 * voc_rms / b_rms if (mute is None or "vocal" not in mute) else 0.25 / b_rms)
     if not normalize:
         return mix
     # ソフトリミッター + ノーマライズ
@@ -278,10 +291,23 @@ def write_wav(audio: np.ndarray, path: str | Path) -> None:
         w.writeframes(data.tobytes())
 
 
-def wav_to_mp3(wav: str | Path, mp3: str | Path) -> bool:
+def _ffmpeg() -> str:
+    """ffmpeg の場所（アプリ隣 → imageio-ffmpeg 同梱版 → PATH）。"""
+    from .audio_io import AudioError, ffmpeg_exe
+
     try:
-        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(wav), "-b:a", "192k", str(mp3)],
-                       check=True)
+        return ffmpeg_exe()
+    except AudioError:
+        return "ffmpeg"
+
+
+def wav_to_mp3(wav: str | Path, mp3: str | Path) -> bool:
+    import sys
+
+    flags = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
+    try:
+        subprocess.run([_ffmpeg(), "-y", "-loglevel", "error", "-i", str(wav), "-b:a", "192k", str(mp3)],
+                       check=True, creationflags=flags)
         return True
     except (FileNotFoundError, subprocess.CalledProcessError):
         return False

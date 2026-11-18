@@ -93,12 +93,41 @@
 <section id="tab-kaeuta" class="tab">
   <div class="panel">
     <h2>① 元の曲をえらぶ</h2>
-    <div class="row gap">
-      <select id="k-song"></select>
-      <label class="inline">新しいタイトル <input id="k-title" placeholder="（替え歌）"></label>
+    <div class="seg" role="tablist">
+      <button class="seg-btn active" data-src="saved">保存した曲から</button>
+      <button class="seg-btn" data-src="import">YouTube・音声ファイルから</button>
     </div>
-    <p class="hint">元の曲は「編集・再生」タブで YAML を貼り付けて保存すると、ここに出てきます。
-      既存のヒット曲の替え歌を <b>公開</b> する場合は権利に注意してください。</p>
+
+    <div id="k-src-saved">
+      <div class="row gap">
+        <select id="k-song"></select>
+        <label class="inline">新しいタイトル <input id="k-title" placeholder="（替え歌）"></label>
+      </div>
+    </div>
+
+    <div id="k-src-import" hidden>
+      <div class="import-grid">
+        <label>YouTube の URL
+          <input id="i-url" placeholder="https://www.youtube.com/watch?v=..." inputmode="url">
+        </label>
+        <div class="or">または</div>
+        <label>音声ファイル（mp3 / m4a / wav など）
+          <input id="i-file" type="file" accept="audio/*,video/*">
+        </label>
+      </div>
+      <div class="row gap">
+        <label class="inline">使う範囲 <input id="i-start" placeholder="0:00" style="width:5.5em"> 〜 <input id="i-end" placeholder="最後まで" style="width:6em"></label>
+        <label class="inline">タイトル <input id="i-title" placeholder="（動画のタイトル）"></label>
+        <span class="spacer"></span>
+        <button id="i-go" class="primary">🎧 読み込んで解析する</button>
+      </div>
+      <p class="hint">サビだけなど <b>30 秒〜1 分くらいの範囲</b> にすると早く・正確になります（例: 0:45 〜 1:30）。
+        テンポ・キー・コード・歌メロを自動で聴き取り、ボーカルを弱めたカラオケ音源も作ります。<span id="i-info"></span></p>
+      <p class="hint notice">⚠ 聴き取りは自動推定なので、音の高さや長さが一部ずれます。「編集・再生」で元の音源と聴き比べて直せます。
+        取り込んだ曲・替え歌は <b>個人で楽しむ範囲</b> で使ってください。公開する場合は元の曲の権利者の許諾が必要です。YouTube の利用規約にも従ってください。</p>
+      <div id="i-progress" class="progress" hidden><div class="spinner small"></div><span id="i-msg"></span></div>
+      <pre id="i-log" hidden></pre>
+    </div>
   </div>
   <div class="panel">
     <h2>② 新しい歌詞を書く</h2>
@@ -134,6 +163,10 @@
       <label class="inline">アレンジ
         <select id="e-style"><option value="pop">ポップ</option><option value="ballad">バラード</option><option value="rock">ロック</option><option value="simple">シンプル</option></select>
       </label>
+      <label class="inline" id="e-acc-wrap" hidden>伴奏
+        <select id="e-acc"><option value="source">元の音源（カラオケ化）</option><option value="generated">自動アレンジ</option><option value="both">両方</option></select>
+      </label>
+      <button id="e-orig" class="ghost" hidden title="取り込んだ元の音源を、ピアノロールと合わせて再生">🎧 元の音源と聴き比べ</button>
       <span class="spacer"></span>
       <span id="e-downloads" class="downloads"></span>
     </div>

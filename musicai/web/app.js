@@ -304,17 +304,20 @@ async function kLoad() {
 }
 function kSection(sec) {
   const orig = sec.phrases.length ? sec.phrases : [];
+  // 元の歌詞があればそのモーラ数、なければ（取り込んだ曲など）メロディのフレーズごとの音の数
+  const counts = orig.length ? orig.map((p) => p.length) : (sec.mel_phrases || []);
   const origBox = h("div", { class: "k-orig" },
     h("b", {}, `【${sec.name}】`), h("span", { class: "muted" }, ` 歌う音 ${sec.sung} 個`),
     ...(orig.length ? orig.map((ph) => h("div", { class: "phr" }, ph.join(""), h("span", { class: "cnt" }, `${ph.length}`)))
-      : [h("div", { class: "muted" }, "（元の歌詞なし）")]));
+      : counts.map((c, k) => h("div", { class: "phr" }, `フレーズ${k + 1}`, h("span", { class: "cnt" }, `${c} 音`)))));
   const status = h("div", { class: "mora-lines" });
-  const ta = h("textarea", { rows: Math.max(2, orig.length), "data-sec": sec.name, placeholder: "新しい歌詞（空欄ならこのパートは元のまま）" });
+  const ta = h("textarea", { rows: Math.max(2, counts.length), "data-sec": sec.name,
+    placeholder: counts.length ? `新しい歌詞（${counts.length} 行に分けて書くと合わせやすい。空欄ならこのパートは元のまま）` : "新しい歌詞" });
   const upd = debounce(async () => {
     const r = await moraOf(ta.value).catch((e) => ({ error: e.message, phrases: [] }));
     if (r.error) return status.replaceChildren(h("div", { class: "bad" }, r.error));
     const rows = r.phrases.map((ph, k) => {
-      const want = orig[k] ? orig[k].length : null;
+      const want = counts[k] !== undefined ? counts[k] : null;
       const n = ph.length;
       let msg = "", cls = "ok";
       if (want === null) { msg = ""; }
@@ -323,8 +326,8 @@ function kSection(sec) {
       else { msg = `${n - want} → 音を伸ばして合わせます`; cls = "warnc"; }
       return h("div", {}, h("span", { class: "n " + cls }, `${n}${want !== null ? " / " + want : ""}`), h("span", { class: "muted" }, ph.join("・")), h("span", { class: cls }, msg));
     });
-    if (r.phrases.length && orig.length && r.phrases.length !== orig.length)
-      rows.push(h("div", { class: "warnc" }, `フレーズ数が違います（元 ${orig.length} / 新 ${r.phrases.length}）。全体で配分します。改行で揃えると自然になります`));
+    if (r.phrases.length && counts.length && r.phrases.length !== counts.length)
+      rows.push(h("div", { class: "warnc" }, `フレーズ数が違います（元 ${counts.length} / 新 ${r.phrases.length}）。全体で配分します。改行で揃えると自然になります`));
     const total = r.phrases.reduce((a, p) => a + p.length, 0);
     if (total) rows.push(h("div", { class: "muted" }, `合計 ${total} モーラ（元の歌う音 ${sec.sung}）`));
     status.replaceChildren(...rows);
@@ -333,6 +336,63 @@ function kSection(sec) {
   return h("div", { class: "k-sec" }, origBox, h("div", {}, ta, status));
 }
 $("#k-song").addEventListener("change", () => { K.song = null; kLoad(); });
+
+// ---- 取り込み（YouTube / 音声ファイル）----
+$$(".seg-btn").forEach((b) => b.addEventListener("click", () => {
+  $$(".seg-btn").forEach((x) => x.classList.toggle("active", x === b));
+  $("#k-src-saved").hidden = b.dataset.src !== "saved";
+  $("#k-src-import").hidden = b.dataset.src !== "import";
+  if (b.dataset.src === "import") importInfo();
+}));
+async function importInfo() {
+  try {
+    const r = await api("/api/import_info");
+    $("#i-info").textContent = (r.demucs ? " ✓ 高精度のボーカル分離（demucs）が使えます。" : "")
+      + (r.ytdlp ? "" : " ※ YouTube の取得には yt-dlp が必要です（音声ファイルは使えます）。");
+  } catch { /* 無視 */ }
+}
+$("#i-url").addEventListener("input", () => { if ($("#i-url").value) $("#i-file").value = ""; });
+$("#i-file").addEventListener("change", () => { if ($("#i-file").files.length) $("#i-url").value = ""; });
+$("#i-go").addEventListener("click", async () => {
+  const url = $("#i-url").value.trim(), file = $("#i-file").files[0];
+  if (!url && !file) return toast("YouTube の URL を貼るか、音声ファイルを選んでください", true);
+  if (url && !/^https?:\/\//.test(url)) return toast("URL は https:// から始まるものを貼ってください", true);
+  const prog = $("#i-progress"), msg = $("#i-msg"), btn = $("#i-go");
+  prog.hidden = false; btn.disabled = true; $("#i-log").hidden = true;
+  try {
+    const body = { start: $("#i-start").value, end: $("#i-end").value, title: $("#i-title").value };
+    if (file) {
+      msg.textContent = "ファイルを送っています…";
+      const up = await fetch("/api/upload", { method: "POST", headers: { "X-Filename": encodeURIComponent(file.name) }, body: file });
+      const uj = await up.json();
+      if (!up.ok) throw new Error(uj.error || "アップロードに失敗しました");
+      body.upload = uj.upload;
+    } else body.url = url;
+    const { job } = await api("/api/import", body);
+    let st;
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 800));
+      st = await api("/api/job?id=" + job);
+      msg.textContent = st.message || "";
+      if (st.state !== "running") break;
+    }
+    if (st.state === "error") throw new Error(st.error);
+    const res = st.result;
+    $("#i-log").textContent = "✓ 「" + res.title + "」を取り込みました\n" + res.log.join("\n")
+      + "\n\n下の ② で新しい歌詞を書いてください。聴き取り結果は「編集・再生」の「元の音源と聴き比べ」で確認できます。";
+    $("#i-log").hidden = false;
+    await refreshSongs();
+    $("#k-song").value = res.name;
+    K.song = null;
+    await kLoad();
+    $("#k-title").value = "";
+    toast("取り込みました！");
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    prog.hidden = true; btn.disabled = false;
+  }
+});
 $("#k-go").addEventListener("click", async () => {
   if (!K.song) return;
   const lyrics = {};
@@ -365,6 +425,7 @@ async function eLoad(name) {
   E.cur = { name: r.name, yaml: r.yaml, view: r.view, dirty: false };
   $("#e-yaml").value = r.yaml;
   $("#e-audio").removeAttribute("src");
+  E.offset = 0;
   $("#e-downloads").replaceChildren();
   eShow(r.view);
   hLoad(r.name);
@@ -376,6 +437,9 @@ function eShow(v) {
   $("#e-meta").textContent = `${v.title} ／ キー ${v.key} ／ ${v.tempo} BPM ／ ${Math.floor(dur / 60)}:${String(dur % 60).padStart(2, "0")}`;
   $("#e-tempo").value = v.tempo;
   $("#e-style").value = v.style;
+  $("#e-acc-wrap").hidden = !v.source;
+  $("#e-acc").value = v.accompaniment || "generated";
+  $("#e-orig").hidden = !(v.source && v.source.original_url);
   const byName = Object.fromEntries(v.sections.map((s) => [s.name, s]));
   const order = v.structure.filter((n, i, a) => a.indexOf(n) === i);
   $("#e-sections").replaceChildren(...order.map((n) => {
@@ -383,7 +447,7 @@ function eShow(v) {
     const col = s.has_melody ? COLORS[s.energy] || COLORS.mid : COLORS.inst;
     const chords = [...new Set(s.chords.map((c) => c.name).filter((c) => c !== "N.C."))].join(" ");
     return h("div", { class: "secbox", style: `--c:${col}` }, h("b", {}, s.name), h("span", { class: "muted" }, `  ${s.bars}小節`),
-      h("div", { class: "muted" }, chords), h("div", { class: "lyr" }, s.phrases.map((p) => p.join("")).join("\n") || "（インスト）"));
+      h("div", { class: "muted" }, chords), h("div", { class: "lyr" }, s.phrases.map((p) => p.join("")).join("\n") || (s.has_melody ? "（歌詞なし）" : "（インスト）")));
   }));
   const w = $("#e-warn");
   w.hidden = !v.warnings.length;
@@ -455,7 +519,7 @@ function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcT
 
 function tick() {
   const a = $("#e-audio");
-  const beat = a.currentTime * (E.cur?.view.tempo || 120) / 60;
+  const beat = (a.currentTime - (E.offset || 0)) * (E.cur?.view.tempo || 120) / 60;
   drawRoll(beat);
   // 自動スクロール
   const wrap = $(".roll-wrap"), x = beat * E.pxPerBeat;
@@ -474,7 +538,7 @@ $("#e-audio").addEventListener("seeked", tick);
 $("#e-roll").addEventListener("click", (e) => {
   const a = $("#e-audio"); if (!a.src || !E.cur) return;
   const r = e.target.getBoundingClientRect();
-  a.currentTime = ((e.clientX - r.left) / E.pxPerBeat) * 60 / E.cur.view.tempo;
+  a.currentTime = ((e.clientX - r.left) / E.pxPerBeat) * 60 / E.cur.view.tempo + (E.offset || 0);
 });
 
 function setYamlField(field, value) {
@@ -485,6 +549,15 @@ function setYamlField(field, value) {
 }
 $("#e-tempo").addEventListener("change", (e) => { setYamlField("tempo", +e.target.value); eCheck(true); });
 $("#e-style").addEventListener("change", (e) => { setYamlField("style", e.target.value); eCheck(true); });
+$("#e-acc").addEventListener("change", (e) => { setYamlField("accompaniment", e.target.value); eCheck(true); });
+$("#e-orig").addEventListener("click", async () => {
+  const src = E.cur?.view.source; if (!src?.original_url) return;
+  const a = $("#e-audio");
+  E.offset = src.offset;  // 元の音源では 1 小節目が offset 秒の位置
+  a.src = src.original_url + "?t=" + Date.now();
+  a.addEventListener("loadedmetadata", () => { a.currentTime = src.offset; a.play().catch(() => {}); }, { once: true });
+  toast("元の音源を再生します（ピアノロールは聴き取った音符）");
+});
 $("#e-yaml").addEventListener("input", () => E.cur && (E.cur.dirty = true));
 
 async function eCheck(quiet = false) {
@@ -501,6 +574,7 @@ async function ePlay() {
   eShow(r.view);
   const f = r.files;
   const a = $("#e-audio");
+  E.offset = 0;
   a.src = "/output/" + encodeURIComponent(f.mp3 || f.wav) + "?t=" + Date.now();
   const dl = (label, file) => file ? h("a", { href: "/output/" + encodeURIComponent(file) + "?dl=1" }, label) : null;
   $("#e-downloads").replaceChildren(h("span", { class: "muted" }, "ダウンロード:"),

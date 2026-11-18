@@ -5,7 +5,24 @@
 **AI（Claude）と一緒に、0 から曲を作る / 替え歌を作る**ためのツールキット。
 曲はすべてテキスト（YAML）で表すので、人間も AI も読んで直せます。音源・MIDI・楽譜まで自動で書き出します。
 
-## 使い方（アプリ）
+## ダウンロードして使う（おすすめ・Python 不要）
+
+[Releases](https://github.com/SAK-Game-Development-Department/music-Ai/releases) から自分のパソコン用のファイルをダウンロードして展開し、中のアプリをダブルクリックします。
+
+| パソコン | ファイル | 起動するもの |
+|---|---|---|
+| Windows | `music-Ai-windows.zip` | `music-Ai.exe` |
+| Mac（M1〜M4 など） | `music-Ai-mac-apple-silicon.zip` | `music-Ai` |
+| Mac（Intel） | `music-Ai-mac-intel.zip` | `music-Ai` |
+| Linux | `music-Ai-linux.tar.gz` | `./music-Ai` |
+
+初回に「保護されました」「開発元を検証できません」と出たら、同梱の「はじめにお読みください.txt」を見てください（署名なしアプリのための表示です）。
+曲は アプリと同じフォルダの `songs/`、書き出したファイルは `output/` に保存されます。
+
+アプリは GitHub Actions（`.github/workflows/build-apps.yml`）で各 OS 向けに自動ビルドされます。
+`v` で始まるタグ（例: `v0.2.0`）を push すると Releases に公開されます。手元でビルドする場合は `pip install pyinstaller` のあと `python packaging/build.py`（その OS 向けのファイルが `dist/` にできます）。
+
+## ソースから使う（Python あり）
 
 1. [Python](https://www.python.org/downloads/)（3.10 以上）をインストール
    - Windows はインストール時に **「Add python.exe to PATH」にチェック**
@@ -17,7 +34,7 @@
 | 画面 | できること |
 |---|---|
 | 🎼 **作曲** | キー・テンポ・アレンジを選び、パート（Aメロ/Bメロ/サビ…）ごとにコード進行と歌詞を入れて「作曲する」。歌詞のモーラ数はその場で表示。「2番」は前のパートと同じメロディで歌詞だけ変えられる |
-| 🎤 **替え歌** | 元の曲を選び、新しい歌詞を書くだけ。元の文字数との差と、どう調整するかがその場で分かる |
+| 🎤 **替え歌** | 元の曲を選び、新しい歌詞を書くだけ。元の文字数との差と、どう調整するかがその場で分かる。**YouTube の URL や音声ファイルからも取り込める**（テンポ・キー・コード・歌メロを自動で聴き取り、元の曲をカラオケ化して伴奏に） |
 | 🎹 **編集・再生** | 伴奏付きで再生、ピアノロールと歌詞がカラオケのように進む。カラオケ版（ボーカルなし）、テンポ・アレンジ変更、MP3 / WAV / MIDI / 楽譜(MusicXML) / 歌詞のダウンロード |
 | 📖 **音楽のきほん** | 定番コード進行の一覧（キーを選ぶとコード名に変換）、曲づくりのポイント |
 
@@ -40,6 +57,7 @@ python -m musicai validate songs specs                  # ファイル構造の�
 python -m musicai migrate songs specs                   # 古い形式のファイルに schema_version を付ける
 python -m musicai check songs/ramen.yaml                # 楽曲ルールの検証（先に validate も行う）
 python -m musicai render songs/ramen.yaml               # → output/ に MP3・MIDI・楽譜
+python -m musicai import "https://youtu.be/..." --start 45 --end 90   # YouTube / 音声ファイルを取り込む
 python -m musicai mora "きょうはいいてんき"              # モーラを数える
 python -m musicai progressions --key G                  # 定番進行
 ```
@@ -56,7 +74,8 @@ python -m musicai progressions --key G                  # 定番進行
 ## 構成
 
 ```
-start_windows.bat / start_mac.command   アプリ起動（ダブルクリック）
+start_windows.bat / start_mac.command   ソースからアプリ起動（ダブルクリック）
+packaging/   exe などのビルド（launcher.py / build.py / 同梱の説明書）
 musicai/
   app.py       アプリのサーバー（標準ライブラリのみ）
   web/         アプリ画面（HTML/CSS/JS）
@@ -69,6 +88,8 @@ musicai/
   history.py   曲のバージョン履歴・歌詞の差分（git を使うのはここだけ）
   composer.py  歌詞 + 進行 → メロディ自動生成
   kaeuta.py    替え歌（歌詞差し替え + メロディ自動調整）
+  transcribe.py 音源の聴き取り（テンポ・キー・コード・歌メロ）とカラオケ化
+  audio_io.py  音声の読み書き（ffmpeg）と YouTube 取得（yt-dlp）
   arrange.py   伴奏の自動アレンジ（pop / ballad / rock / simple）
   synth.py     音源合成（母音で歌う仮歌シンセ + 楽器）
   export.py    MIDI / MusicXML / 歌詞カード
@@ -83,3 +104,8 @@ tests/   python -m unittest discover -s tests
 
 - 仮歌シンセは母音（あいうえお）で歌う簡易版です。歌詞をはっきり歌わせるには MusicXML を NEUTRINO / Synthesizer V などへ
 - 既存曲の替え歌を公開する場合は元曲の権利に注意。サンプルはパブリックドメインのメロディ（きらきら星）+ オリジナル歌詞です
+
+## ライセンス
+
+このソフトウェア（コード・ドキュメント）は [MIT ライセンス](LICENSE) です。
+サンプル曲の歌詞・メロディについては上の「メモ」を参照してください。既存曲を使った替え歌の権利は、このライセンスとは別です。

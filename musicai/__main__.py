@@ -6,6 +6,7 @@
   check    曲ファイルの検証（小節の長さ、音符数と歌詞モーラ数）。先に validate を行う
   compose  作曲仕様（歌詞・進行・構成）→ メロディ付きの曲ファイル
   kaeuta   既存の曲の歌詞を差し替え、メロディを自動調整した替え歌ファイルを作る
+  import   YouTube の URL / 音声ファイル → 曲ファイル（テンポ・キー・コード・歌メロを推定、カラオケ音源つき）
   mora     歌詞のモーラ分割を表示
   progressions  定番コード進行の一覧
   app      アプリ（ブラウザ画面）を起動
@@ -20,32 +21,26 @@ import yaml
 
 
 def cmd_render(a):
-    from .arrange import arrange
-    from .export import lyric_sheet, write_midi, write_musicxml
+    from .service import render_song
     from .song import check_report, load_song
-    from .synth import render, wav_to_mp3, write_wav
 
     song = load_song(a.song)
     print(check_report(song))
     out = Path(a.out or "output")
-    out.mkdir(parents=True, exist_ok=True)
-    stem = Path(a.song).stem
     if a.tempo:
         song.tempo = a.tempo
-    arr = arrange(song)
-    write_midi(song, arr, out / f"{stem}.mid")
-    write_musicxml(song, out / f"{stem}.musicxml")
-    (out / f"{stem}_歌詞.txt").write_text(lyric_sheet(song), encoding="utf-8")
-    files = [f"{stem}.mid", f"{stem}.musicxml", f"{stem}_歌詞.txt"]
-    if not a.no_audio:
-        mute = set(a.mute.split(",")) if a.mute else None
-        audio = render(arr, song.tempo, mute)
-        wav = out / f"{stem}.wav"
-        write_wav(audio, wav)
-        files.append(wav.name)
-        if wav_to_mp3(wav, out / f"{stem}.mp3"):
-            files.append(f"{stem}.mp3")
-    print(f"\n出力 → {out}/: " + ", ".join(files))
+    mute = set(a.mute.split(",")) if a.mute else None
+    files = render_song(song, Path(a.song).stem, mute, audio=not a.no_audio, out_dir=out)
+    print(f"\n出力 → {out}/: " + ", ".join(files.values()))
+
+
+def cmd_import(a):
+    from .service import import_song
+
+    res = import_song(a.source, a.start or 0, a.end, a.title, progress=lambda m: print("  " + m))
+    print("\n".join(res["log"]))
+    print(f"\n曲ファイル → songs/{res['name']}.yaml")
+    print("次: python -m musicai kaeuta songs/%s.yaml --section パート1 --lyrics \"...\"" % res["name"])
 
 
 def _expand(paths):
@@ -197,6 +192,13 @@ def main(argv=None):
     k.add_argument("--title")
     k.add_argument("-o", "--out")
     k.set_defaults(func=cmd_kaeuta)
+
+    im = sp.add_parser("import", help="YouTube の URL か音声ファイルから曲を起こす（替え歌用）")
+    im.add_argument("source", help="YouTube の URL または音声ファイル")
+    im.add_argument("--start", type=float, help="使う範囲の開始（秒）")
+    im.add_argument("--end", type=float, help="使う範囲の終了（秒）")
+    im.add_argument("--title")
+    im.set_defaults(func=cmd_import)
 
     mo = sp.add_parser("mora", help="歌詞のモーラを数える")
     mo.add_argument("text")
