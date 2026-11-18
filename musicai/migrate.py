@@ -13,21 +13,28 @@ CURRENT_VERSION = 1
 
 
 def _v0_to_v1(text: str) -> str:
-    """schema_version が無いファイルに 1 を付ける。先頭のコメント行・空行の後ろに入れる。"""
+    """schema_version が無いファイルに 1 を付ける。先頭のコメント行・空行（と `---`）の後ろに入れる。"""
+    bom = "\ufeff" if text.startswith("\ufeff") else ""  # Windows のメモ帳が付ける BOM は先頭に残す
+    text = text[len(bom):]
     lines = text.splitlines(keepends=True)
     i = 0
     while i < len(lines) and (not lines[i].strip() or lines[i].lstrip().startswith("#")):
         i += 1
+    if i < len(lines) and lines[i].rstrip() == "---":
+        i += 1
     nl = "\r\n" if text.count("\r\n") else "\n"
     lines.insert(i, f"schema_version: 1{nl}")
-    return "".join(lines)
+    return bom + "".join(lines)
 
 
 MIGRATIONS = {0: _v0_to_v1}
 
 
 def file_version(text: str) -> int:
-    data = yaml.safe_load(text)
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError:
+        raise ValueError("YAML として読めません") from None
     if not isinstance(data, dict):
         raise ValueError("YAML のトップがマップではありません")
     v = data.get("schema_version", 0)
