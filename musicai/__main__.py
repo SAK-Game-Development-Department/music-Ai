@@ -11,6 +11,8 @@
   proposals  曲の提案の一覧
   mora     歌詞のモーラ分割を表示
   progressions  定番コード進行の一覧
+  export   曲ファイル → MIDI / MusicXML / 歌詞カード（既定）。--format で wav / mp3 も。validate と check を通ったものだけ
+  mcp      MCP サーバ（標準入出力）を起動。AI アプリから compose / kaeuta / validate / export を呼べる
   app      アプリ（ブラウザ画面）を起動
 """
 from __future__ import annotations
@@ -205,6 +207,16 @@ def main(argv=None):
     mg.add_argument("path", nargs="+", help="YAML ファイル、またはフォルダ")
     mg.add_argument("--dry-run", action="store_true", help="書き換えずに確認だけ")
     mg.set_defaults(func=cmd_migrate)
+
+    ex = sp.add_parser("export", help="MIDI・MusicXML・歌詞カード（と音声）を書き出す")
+    ex.add_argument("song")
+    ex.add_argument("--format", default="midi,musicxml,lyrics", help="midi,musicxml,lyrics,wav,mp3 のうちカンマ区切り")
+    ex.add_argument("-o", "--out", help="出力フォルダ（既定: output）")
+    ex.add_argument("--allow-warnings", action="store_true", help="check の警告があっても書き出す")
+    ex.set_defaults(func=cmd_export)
+
+    mc = sp.add_parser("mcp", help="MCP サーバ（標準入出力）を起動")
+    mc.set_defaults(func=lambda a: __import__("musicai.mcp_server", fromlist=["serve"]).serve())
 
     m = sp.add_parser("compose", help="作曲仕様からメロディを自動生成")
     m.add_argument("spec")

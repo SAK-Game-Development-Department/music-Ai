@@ -59,6 +59,8 @@ python -m musicai validate songs specs                  # ファイル構造の�
 python -m musicai migrate songs specs                   # 古い形式のファイルに schema_version を付ける
 python -m musicai check songs/ramen.yaml                # 楽曲ルールの検証（先に validate も行う）
 python -m musicai render songs/ramen.yaml               # → output/ に MP3・MIDI・楽譜
+python -m musicai export songs/ramen.yaml --format midi,musicxml,lyrics   # 音を作らず書き出し（wav,mp3 も指定可）。validate と check を通った曲だけ
+python -m musicai mcp                                   # AI アプリ向けの MCP サーバ（下の「AI アプリから使う」）
 python -m musicai import "https://youtu.be/..." --start 45 --end 90   # YouTube / 音声ファイルを取り込む
 python -m musicai propose hoshi --yaml 修正案.yaml --title "サビを高く" --reason "…"   # 修正案を提案として出す（AI 用）
 python -m musicai proposals hoshi                       # 曲の提案の一覧
@@ -110,6 +112,32 @@ tests/   python -m unittest discover -s tests
 
 - 仮歌シンセは母音（あいうえお）で歌う簡易版です。歌詞をはっきり歌わせるには MusicXML を NEUTRINO / Synthesizer V などへ
 - 既存曲の替え歌を公開する場合は元曲の権利に注意。サンプルはパブリックドメインのメロディ（きらきら星）+ オリジナル歌詞です
+
+## AI アプリから使う（MCP）
+
+`python -m musicai mcp` は、AI アプリ（Claude Desktop・Claude Code など）から次の 4 つの道具を呼べる MCP サーバです。
+
+| 道具 | できること |
+|---|---|
+| `compose` | 作曲仕様（歌詞・進行・構成）から曲を作って `songs/` に保存 |
+| `kaeuta` | 保存済みの曲の歌詞を差し替え、メロディを自動調整して保存 |
+| `validate` | ファイル構造をスキーマで検証（`check: true` で楽曲ルールの警告も） |
+| `export` | `output/` に MIDI・楽譜・歌詞カード（`wav`・`mp3` も指定可）を書き出し |
+
+安全のため、書き込むのは `songs/` と `output/` の中だけです。同名の曲は `overwrite: true` を付けないと上書きしません。
+`export` は `validate` と `check`（警告ゼロ）を通らない曲は書き出しません。
+
+接続の例（このフォルダで実行）:
+
+```bash
+claude mcp add musicai -- python -m musicai mcp          # Claude Code
+```
+
+Claude Desktop の設定ファイル（`claude_desktop_config.json`）には、次のように書きます（`cwd` はこのフォルダ）。
+
+```json
+{ "mcpServers": { "musicai": { "command": "python", "args": ["-m", "musicai", "mcp"], "cwd": "/このフォルダのパス" } } }
+```
 
 ## ライセンス
 
