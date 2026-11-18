@@ -141,6 +141,68 @@ class VersionTest(RepoCase):
         self.assertEqual(len(self.h.list_versions("s")), 1)
 
 
+class RestoreTest(RepoCase):
+    def v(self, text, note=""):
+        (self.songs / "s.yaml").write_text(text, encoding="utf-8")
+        return self.h.save_version("s", note)
+
+    def test_restore_adds_new_version_and_keeps_history(self):
+        self.v(SONG_V1, "元")
+        self.v(SONG_V2, "変更")
+        r = self.h.restore_version("s", 1)
+        self.assertEqual((r["restored"], r["no"], r["auto_saved"]), (True, 3, None))
+        self.assertEqual((self.songs / "s.yaml").read_text(encoding="utf-8"), SONG_V1)
+        vs = self.h.list_versions("s")
+        self.assertEqual([v.no for v in vs], [1, 2, 3])  # 巻き戻さず、足される
+        self.assertEqual(vs[2].note, "バージョン 1 に戻した")
+        self.assertEqual(vs[2].summary, "歌詞 A／テンポ")  # 前（2）との差
+        self.assertEqual(self.h.read_version("s", 2), SONG_V2)  # 古い版はそのまま読める
+
+    def test_unsaved_work_is_kept_as_automatic_version(self):
+        self.v(SONG_V1, "元")
+        self.v(SONG_V2, "変更")
+        work = SONG_V2.replace("tempo: 120", "tempo: 90")  # まだバージョンにしていない作業中の変更
+        (self.songs / "s.yaml").write_text(work, encoding="utf-8")
+        r = self.h.restore_version("s", 1)
+        self.assertEqual((r["restored"], r["auto_saved"], r["no"]), (True, 3, 4))
+        vs = self.h.list_versions("s")
+        self.assertEqual([v.note for v in vs][2:], ["復元前の自動保存", "バージョン 1 に戻した"])
+        self.assertEqual(self.h.read_version("s", 3), work)  # 作業中の内容は失われていない
+        self.assertEqual((self.songs / "s.yaml").read_text(encoding="utf-8"), SONG_V1)
+
+    def test_noop_and_errors(self):
+        self.v(SONG_V1)
+        r = self.h.restore_version("s", 1)  # すでに同じ内容
+        self.assertEqual((r["restored"], r["no"]), (False, 1))
+        self.assertEqual(len(self.h.list_versions("s")), 1)
+        for bad in (0, 2, -1):
+            with self.assertRaises(HistoryError):
+                self.h.restore_version("s", bad)
+            with self.assertRaises(HistoryError):
+                self.h.read_version("s", bad)
+
+    def test_restore_deleted_file_and_only_that_file(self):
+        self.v(SONG_V1, "元")
+        (self.songs / "s.yaml").unlink()
+        (self.root / "other.txt").write_text("o", encoding="utf-8")
+        git(self.root, "add", "other.txt")
+        r = self.h.restore_version("s", 1)
+        self.assertTrue(r["restored"])
+        self.assertEqual((self.songs / "s.yaml").read_text(encoding="utf-8"), SONG_V1)
+        # 内容は最新バージョンと同じなので、記録だけが増える。ほかの staged ファイルは巻き込まない
+        self.assertEqual(git(self.root, "show", "--name-only", "--format=", "HEAD").split(), [])
+        self.assertIn("other.txt", git(self.root, "diff", "--cached", "--name-only"))
+        self.assertEqual([v.note for v in self.h.list_versions("s")], ["元", "バージョン 1 に戻した"])
+
+    def test_responses_have_no_git_terms(self):
+        self.v(SONG_V1); self.v(SONG_V2)
+        blob = json.dumps([self.h.restore_version("s", 1), [v.to_dict() for v in self.h.list_versions("s")]],
+                          ensure_ascii=False)
+        self.assertNotRegex(blob, r"[0-9a-f]{7,40}")
+        for word in ("commit", "branch", "hash", "reset", "revert"):
+            self.assertNotIn(word, blob.lower())
+
+
 class UnavailableTest(unittest.TestCase):
     def test_outside_repo(self):
         with tempfile.TemporaryDirectory() as d:
