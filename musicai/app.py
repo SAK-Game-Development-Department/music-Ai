@@ -116,6 +116,34 @@ def api_version_save(_q, b):
     return {"available": True, "name": name, **r}
 
 
+def api_version_restore(_q, b):
+    """曲をバージョン no の内容に戻す（戻した内容も新しいバージョンになる）。作業中の内容は先に自動で残す。"""
+    name = service.safe_name(b.get("name", ""))
+    try:
+        r = _history().restore_version(name, int(b.get("no")))
+    except history.HistoryUnavailable:
+        return _unavailable()
+    return {"available": True, "name": name, **r}
+
+
+def api_version_render(_q, b):
+    """バージョン no の内容を音にする（比較試聴用。作業中のファイルは変えない）。"""
+    name = service.safe_name(b.get("name", ""))
+    no = int(b.get("no"))
+    try:
+        text = _history().read_version(name, no)
+    except history.HistoryUnavailable:
+        return _unavailable()
+    song = song_from_dict(_load_yaml_text(text))
+    stem = f"{name}_v{no}"
+    mute = set(b.get("mute") or [])
+    if mute:
+        stem += "_" + "_".join(sorted(mute)) + "なし"
+    with _render_lock:
+        files = service.render_song(song, stem, mute)
+    return {"available": True, "name": name, "no": no, "files": files}
+
+
 def api_render(_q, b):
     data = _load_yaml_text(b["yaml"])
     song = song_from_dict(data)
@@ -250,6 +278,8 @@ ROUTES = {
     ("GET", "/api/history"): api_history,
     ("GET", "/api/history/diff"): api_history_diff,
     ("POST", "/api/version/save"): api_version_save,
+    ("POST", "/api/version/restore"): api_version_restore,
+    ("POST", "/api/version/render"): api_version_render,
     ("POST", "/api/render"): api_render,
     ("POST", "/api/compose"): api_compose,
     ("POST", "/api/kaeuta"): api_kaeuta,
