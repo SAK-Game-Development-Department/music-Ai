@@ -1,3 +1,6 @@
+# IDE の設定（PyCharm など）
+.idea/
+
 output/
 __pycache__/
 *.pyc
