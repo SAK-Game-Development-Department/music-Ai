@@ -145,3 +145,16 @@ textarea.auto { border-color: var(--accent); border-style: dashed; }
 .progress { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--accent); margin: 8px 0; }
 .progress[hidden] { display: none; }
 .spinner.small { width: 20px; height: 20px; border-width: 3px; border-color: var(--accent-soft); border-top-color: var(--accent); }
+
+/* 提案 */
+.badge { background: var(--accent); color: #fff; border-radius: 99px; padding: 1px 10px; font-size: 12px; font-weight: 700; vertical-align: middle; }
+.prop.rejected, .prop.adopted { opacity: .75; }
+.tag { font-size: 12px; padding: 0 8px; border-radius: 99px; border: 1px solid var(--line); }
+.tag.pending { color: var(--accent); border-color: var(--accent); }
+.tag.adopted { color: var(--ok); border-color: var(--ok); }
+.tag.rejected { color: var(--muted); }
+.pwarn { color: var(--warn); font-size: 13px; }
+.pdetail:empty { display: none; }
+.pdetail { margin-top: 8px; }
+.pdetail audio { width: 100%; }
+button:disabled { opacity: .5; cursor: not-allowed; }

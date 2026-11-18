@@ -204,10 +204,18 @@
         <button id="h-save" class="primary">バージョンを保存</button>
       </div>
       <p class="hint">「保存」は作業中のファイルを上書きするだけで、履歴には残りません。残したい節目で「バージョンを保存」を押します。
-        下の一覧から <b>2 つ選ぶ</b>と、歌詞の違いが行ごとに表示されます。</p>
+        下の一覧から <b>2 つ選ぶ</b>と、歌詞の違いが行ごとに表示され、<b>聴き比べ</b>もできます。
+        「このバージョンに戻す」で、昔の内容に戻せます（戻したことも記録に残るので、やり直せます）。</p>
       <ul id="h-list" class="timeline"></ul>
       <div id="h-diff"></div>
     </div>
+  </div>
+
+  <div class="panel" id="e-proposals">
+    <h2>💡 提案 <span id="p-count" class="badge" hidden></span> <small class="muted">AI が出した修正案。採用するまで、曲は変わりません</small></h2>
+    <p class="hint">AI（Claude など）に「サビを高くして」などと頼むと、曲を直接書き換えずに、ここに<b>提案</b>が届きます。
+      内容と理由を確かめて、<b>採用</b>か<b>却下</b>を選びます。採用したときだけ、バージョンとして記録されます（採用の直前の内容も残るので、あとから戻せます）。</p>
+    <ul id="p-list" class="timeline"></ul>
   </div>
 
   <details class="panel">

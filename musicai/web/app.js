@@ -482,6 +482,7 @@ async function eLoad(name) {
   $("#e-downloads").replaceChildren();
   eShow(r.view);
   hLoad(r.name);
+  pLoad(r.name);
 }
 
 function eShow(v) {
@@ -662,7 +663,7 @@ $("#e-delete").addEventListener("click", async () => {
   if (!E.cur || !confirm(`「${E.cur.view.title}」（${E.cur.name}.yaml）を削除しますか？`)) return;
   await api("/api/delete", { name: E.cur.name });
   E.cur = null; await refreshSongs();
-  hClear();
+  hClear(); pClear();
   if ($("#e-song").value) eLoad($("#e-song").value);
   toast("削除しました");
 });
@@ -708,8 +709,55 @@ function hRender() {
     return h("li", {}, h("label", { class: "inline", for: "h-v" + v.no }, cb,
       h("b", {}, `バージョン ${v.no}`), h("span", { class: "muted" }, ` ${fmtAt(v.at)}`)),
       v.note ? h("div", { class: "note" }, v.note) : null,
-      h("div", { class: "muted" }, v.summary));
+      h("div", { class: "muted" }, v.summary),
+      h("div", { class: "vtools" }, h("button", { class: "ghost chip", title: "この時点の内容に戻します（戻したことも新しいバージョンとして残ります）",
+        onclick: () => hRestore(v.no) }, "↩ このバージョンに戻す")));
   }));
+}
+
+async function hRestore(no) {
+  if (!E.cur) return;
+  if (!confirm(`バージョン ${no} の内容に戻しますか？\n\n・今の内容がまだバージョンになっていなければ、先に自動で残します\n・戻したことも新しいバージョンとして記録されるので、あとからやり直せます`)) return;
+  if (!(await eSave(E.cur.name))) return;  // 作業中の編集を先にファイルへ（失うものが無いように）
+  const r = await busy("戻しています…", () => api("/api/version/restore", { name: E.cur.name, no })).catch(() => null);
+  if (!r) return;
+  if (r.available === false) return hOff(r.message);
+  await eLoad(E.cur.name);  // 画面を、戻した内容で読み直す（バージョン一覧も更新される）
+  toast(r.message + (r.auto_saved ? `（戻す前の内容は、バージョン ${r.auto_saved} に残しました）` : ""));
+}
+
+async function hCompare(a, b) {
+  $("#e-audio").pause();
+  const mute = $("#e-karaoke").checked ? ["vocal"] : [];
+  const rs = await busy("2 つのバージョンの音を作っています…（1 分ほどかかることがあります）", async () => {
+    const ra = await api("/api/version/render", { name: H.name, no: a, mute });
+    const rb = await api("/api/version/render", { name: H.name, no: b, mute });
+    return [ra, rb];
+  }).catch(() => null);
+  if (!rs) return;
+  if (rs.some((r) => r.available === false)) return hOff(rs[0].message);
+  const mk = (r, label) => {
+    const f = r.files.mp3 || r.files.wav;
+    const au = h("audio", { controls: true, preload: "auto", src: "/output/" + encodeURIComponent(f) + "?t=" + Date.now() });
+    return { label, au };
+  };
+  const A = mk(rs[0], `バージョン ${a}`), B = mk(rs[1], `バージョン ${b}`);
+  const switchTo = (to, from) => {  // 同じ位置から、もう一方に切り替えて続きを聴く
+    const t = from.au.currentTime;
+    from.au.pause();
+    to.au.currentTime = t;
+    to.au.play().catch(() => {});
+  };
+  const box = h("div", { class: "ab" },
+    h("h3", {}, "🎧 聴き比べ"),
+    h("p", { class: "hint" }, "再生中に切り替えると、同じ位置から続きが聞けます。"),
+    h("div", { class: "row gap wrap" },
+      h("button", { class: "primary", onclick: () => switchTo(A, B) }, `${A.label} を聴く`),
+      h("button", { class: "primary", onclick: () => switchTo(B, A) }, `${B.label} を聴く`)),
+    h("div", { class: "abplayers" },
+      h("div", {}, h("div", { class: "muted" }, A.label), A.au), h("div", {}, h("div", { class: "muted" }, B.label), B.au)));
+  $("#h-diff").querySelector(".ab")?.remove();
+  $("#h-diff").append(box);
 }
 
 async function hDiff() {
@@ -719,6 +767,7 @@ async function hDiff() {
   const box = $("#h-diff");
   const changed = r.sections.filter((s) => s.changed);
   box.replaceChildren(h("h3", {}, `バージョン ${a} → バージョン ${b} の歌詞の違い`),
+    h("div", { class: "vtools" }, h("button", { class: "ghost", onclick: () => hCompare(a, b) }, "🎧 この 2 つを聴き比べ")),
     !changed.length ? h("p", { class: "muted" }, "歌詞に違いはありません。") : null,
     ...changed.map((s) => h("div", { class: "dsec" },
       h("b", {}, `【${s.name}】`), s.status === "added" ? h("span", { class: "muted" }, " （このパートが追加されました）") : null,
@@ -726,6 +775,92 @@ async function hDiff() {
       ...s.lines.map((l) => l.type === "change"
         ? h("div", { class: "dl change" }, h("div", { class: "remove" }, "－ " + l.old), h("div", { class: "add" }, "＋ " + l.new))
         : h("div", { class: "dl " + l.type }, (l.type === "add" ? "＋ " : l.type === "remove" ? "－ " : "　 ") + l.text)))));
+}
+
+// ---------------- 提案（AI の修正案） ----------------
+const P = { name: null, items: [] };
+function pClear() { P.name = null; P.items = []; pRender(); }
+
+async function pLoad(name) {
+  try {
+    const r = await api("/api/proposals?song=" + encodeURIComponent(name));
+    P.name = name; P.items = r.proposals;
+  } catch { P.name = name; P.items = []; }
+  pRender();
+}
+
+function pRender() {
+  const pending = P.items.filter((x) => x.status === "pending").length;
+  const badge = $("#p-count");
+  badge.hidden = !pending; badge.textContent = `${pending} 件`;
+  $("#p-list").replaceChildren(...(P.items.length ? P.items.map(pItem)
+    : [h("li", { class: "muted" }, "提案はありません。")]));
+}
+
+function pItem(x) {
+  const open = x.status === "pending";
+  const box = h("div", { class: "pdetail" });
+  const audio = h("div", { class: "pdetail" });
+  return h("li", { class: "prop " + x.status },
+    h("div", {}, h("b", {}, x.title), " ", h("span", { class: "tag " + x.status }, x.status_label),
+      h("span", { class: "muted" }, ` ${fmtAt(x.at)}`)),
+    x.reason ? h("div", { class: "note" }, x.reason) : null,
+    h("div", { class: "muted" }, "変更: " + x.summary),
+    x.warnings.length ? h("div", { class: "pwarn" }, "⚠ " + x.warnings.join(" ／ ")) : null,
+    x.stale ? h("div", { class: "pwarn" }, "⚠ この提案を出したあとに、曲が変わっています。そのままでは採用できません。") : null,
+    x.status === "adopted" && x.adopted_version ? h("div", { class: "muted" }, `バージョン ${x.adopted_version} として記録しました`) : null,
+    h("div", { class: "vtools row gap wrap" },
+      h("button", { class: "ghost chip", onclick: () => pDetail(x.id, box) }, "👁 内容を見る"),
+      open ? h("button", { class: "ghost chip", onclick: () => pPlay(x.id, audio) }, "🎧 試聴") : null,
+      open ? h("button", { class: "primary chip", disabled: x.stale, onclick: () => pAdopt(x) }, "✔ 採用") : null,
+      open ? h("button", { class: "ghost chip", onclick: () => pReject(x) }, "✖ 却下") : null),
+    box, audio);
+}
+
+async function pDetail(id, box) {
+  if (box.childElementCount) return box.replaceChildren();  // もう一度押すと閉じる
+  const d = await api(`/api/proposal?song=${encodeURIComponent(P.name)}&id=${id}`).catch((e) => { toast(e.message, true); throw e; });
+  const changed = d.lyrics.filter((s) => s.changed);
+  box.replaceChildren(h("h3", {}, "歌詞の違い（今の曲 → 提案）"),
+    !changed.length ? h("p", { class: "muted" }, "歌詞に違いはありません（メロディ・コードなどの変更です）。") : null,
+    ...changed.map((s) => h("div", { class: "dsec" },
+      h("b", {}, `【${s.name}】`),
+      s.status === "added" ? h("span", { class: "muted" }, " （このパートが追加されます）") : null,
+      s.status === "removed" ? h("span", { class: "muted" }, " （このパートが削除されます）") : null,
+      ...s.lines.map((l) => l.type === "change"
+        ? h("div", { class: "dl change" }, h("div", { class: "remove" }, "－ " + l.old), h("div", { class: "add" }, "＋ " + l.new))
+        : h("div", { class: "dl " + l.type }, (l.type === "add" ? "＋ " : l.type === "remove" ? "－ " : "　 ") + l.text)))));
+}
+
+async function pPlay(id, holder) {
+  $("#e-audio").pause();
+  const mute = $("#e-karaoke").checked ? ["vocal"] : [];
+  const r = await busy("提案の音を作っています…（30 秒ほどかかることがあります）", () =>
+    api("/api/proposal/render", { song: P.name, id, mute })).catch(() => null);
+  if (!r) return;
+  const f = r.files.mp3 || r.files.wav;
+  const au = h("audio", { controls: true, autoplay: true, src: "/output/" + encodeURIComponent(f) + "?t=" + Date.now() });
+  holder.replaceChildren(h("div", { class: "muted" }, "提案の試聴（曲のファイルは変わりません）"), au);
+  au.play().catch(() => {});
+}
+
+async function pAdopt(x) {
+  if (!E.cur) return;
+  if (!confirm(`「${x.title}」を採用しますか？\n\n・曲がこの提案の内容に変わります\n・採用する直前の内容は、先にバージョンとして残します（あとから戻せます）`)) return;
+  if (E.cur.dirty) {  // 編集中の内容が、採用で失われないように
+    if (!confirm("保存していない編集があります。先に保存してから採用します。よろしいですか？")) return;
+    if (!(await eSave(E.cur.name))) return;
+  }
+  const r = await api("/api/proposal/adopt", { song: P.name, id: x.id }).catch((e) => { toast(e.message, true); return null; });
+  if (!r) return pLoad(P.name);  // 失敗（曲が変わっていた等）は、一覧を読み直して状態を見せる
+  await eLoad(P.name);  // 画面を、採用した内容で読み直す
+  toast(r.message);
+}
+
+async function pReject(x) {
+  const r = await api("/api/proposal/reject", { song: P.name, id: x.id }).catch((e) => { toast(e.message, true); return null; });
+  if (r) toast(r.message);
+  pLoad(P.name);
 }
 
 $("#h-save").addEventListener("click", async () => {
