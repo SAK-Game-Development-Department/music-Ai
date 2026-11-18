@@ -1,0 +1,118 @@
+# Windows / Mac / Linux 向けのアプリ（実行ファイル）をビルドする
+#  - main への push・手動実行: 各 OS のファイルを Actions の Artifacts に置く
+#  - v* タグの push: GitHub Releases にダウンロード用ファイルを公開する
+name: build-apps
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths-ignore: ["docs/**", "*.md"]
+  pull_request:
+    paths: ["musicai/**", "packaging/**", "songs/**", "requirements.txt", ".github/workflows/build-apps.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            package: music-Ai-windows
+            readme: windows.txt
+          - os: macos-latest            # Apple シリコン
+            package: music-Ai-mac-apple-silicon
+            readme: mac.txt
+          - os: macos-15-intel          # Intel Mac
+            package: music-Ai-mac-intel
+            readme: mac.txt
+          - os: ubuntu-22.04            # 古めの glibc で作ると多くのディストリで動く
+            package: music-Ai-linux
+            readme: linux.txt
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests
+
+      - name: Build
+        run: python packaging/build.py
+
+      - name: Self test (built app renders a song)
+        shell: bash
+        run: |
+          mkdir -p selftest && cp dist/music-Ai* selftest/
+          cd selftest && ./music-Ai* --selftest
+          test -s output/selftest.wav
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force pkg/music-Ai | Out-Null
+          Copy-Item dist/music-Ai.exe pkg/music-Ai/
+          Copy-Item packaging/readme/${{ matrix.readme }} "pkg/music-Ai/はじめにお読みください.txt"
+          Compress-Archive -Path pkg/music-Ai -DestinationPath "${{ matrix.package }}.zip"
+
+      - name: Package (Mac)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p pkg/music-Ai
+          cp dist/music-Ai pkg/music-Ai/ && chmod +x pkg/music-Ai/music-Ai
+          cp packaging/readme/${{ matrix.readme }} "pkg/music-Ai/はじめにお読みください.txt"
+          ditto -c -k --keepParent pkg/music-Ai "${{ matrix.package }}.zip"
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p pkg/music-Ai
+          cp dist/music-Ai pkg/music-Ai/ && chmod +x pkg/music-Ai/music-Ai
+          cp packaging/readme/${{ matrix.readme }} "pkg/music-Ai/はじめにお読みください.txt"
+          tar czf "${{ matrix.package }}.tar.gz" -C pkg music-Ai
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.package }}
+          path: |
+            ${{ matrix.package }}.zip
+            ${{ matrix.package }}.tar.gz
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: packages
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: packages/*
+          body: |
+            ## ダウンロード
+            | パソコン | ファイル |
+            |---|---|
+            | Windows | music-Ai-windows.zip |
+            | Mac（M1〜M4 など Apple シリコン） | music-Ai-mac-apple-silicon.zip |
+            | Mac（Intel） | music-Ai-mac-intel.zip |
+            | Linux | music-Ai-linux.tar.gz |
+
+            展開して、中の「はじめにお読みください.txt」を見てください。

@@ -1,0 +1,16 @@
+music-Ai（Linux 版）
+===================
+
+【起動】 ターミナルで:
+    tar xzf music-Ai-linux.tar.gz
+    cd music-Ai
+    ./music-Ai
+  → ブラウザにアプリ画面が出ます。終了は Ctrl+C
+  ファイルマネージャーから「実行」できる場合はダブルクリックでも起動します
+
+【保存場所】 music-Ai と同じフォルダの songs（曲）と output（音源・MIDI・楽譜）
+  ※ 書き込めない場所の場合は ~/music-Ai に保存されます
+
+【MP3 で保存したいとき】 sudo apt install ffmpeg など（なくても WAV で再生・保存できます）
+
+※ Ubuntu 22.04 以降と同程度の新しさの Linux（glibc 2.35 以上）で動きます

@@ -5,7 +5,24 @@
 **AI（Claude）と一緒に、0 から曲を作る / 替え歌を作る**ためのツールキット。
 曲はすべてテキスト（YAML）で表すので、人間も AI も読んで直せます。音源・MIDI・楽譜まで自動で書き出します。
 
-## 使い方（アプリ）
+## ダウンロードして使う（おすすめ・Python 不要）
+
+[Releases](https://github.com/SAK-Game-Development-Department/music-Ai/releases) から自分のパソコン用のファイルをダウンロードして展開し、中のアプリをダブルクリックします。
+
+| パソコン | ファイル | 起動するもの |
+|---|---|---|
+| Windows | `music-Ai-windows.zip` | `music-Ai.exe` |
+| Mac（M1〜M4 など） | `music-Ai-mac-apple-silicon.zip` | `music-Ai` |
+| Mac（Intel） | `music-Ai-mac-intel.zip` | `music-Ai` |
+| Linux | `music-Ai-linux.tar.gz` | `./music-Ai` |
+
+初回に「保護されました」「開発元を検証できません」と出たら、同梱の「はじめにお読みください.txt」を見てください（署名なしアプリのための表示です）。
+曲は アプリと同じフォルダの `songs/`、書き出したファイルは `output/` に保存されます。
+
+アプリは GitHub Actions（`.github/workflows/build-apps.yml`）で各 OS 向けに自動ビルドされます。
+`v` で始まるタグ（例: `v0.2.0`）を push すると Releases に公開されます。手元でビルドする場合は `pip install pyinstaller` のあと `python packaging/build.py`（その OS 向けのファイルが `dist/` にできます）。
+
+## ソースから使う（Python あり）
 
 1. [Python](https://www.python.org/downloads/)（3.10 以上）をインストール
    - Windows はインストール時に **「Add python.exe to PATH」にチェック**
@@ -49,7 +66,8 @@ python -m musicai progressions --key G                  # 定番進行
 ## 構成
 
 ```
-start_windows.bat / start_mac.command   アプリ起動（ダブルクリック）
+start_windows.bat / start_mac.command   ソースからアプリ起動（ダブルクリック）
+packaging/   exe などのビルド（launcher.py / build.py / 同梱の説明書）
 musicai/
   app.py       アプリのサーバー（標準ライブラリのみ）
   web/         アプリ画面（HTML/CSS/JS）

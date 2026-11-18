@@ -11,10 +11,43 @@ import yaml
 from .lyrics import phrases, split_mora
 from .song import Song, check_report, melody_to_text, parse_melody, save_song_dict, song_from_dict, _resolve_spec
 
-ROOT = Path(__file__).resolve().parent.parent
-SONGS_DIR = ROOT / "songs"
-SPECS_DIR = ROOT / "specs"
-OUTPUT_DIR = ROOT / "output"
+import shutil
+import sys
+
+FROZEN = getattr(sys, "frozen", False)  # exe として動いているか
+# RESOURCE_DIR: 同梱ファイル（画面・サンプル曲）。DATA_DIR: 保存先（exe の隣）
+RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+DATA_DIR = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent.parent
+
+
+def _writable(d: Path) -> bool:
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        t = d / ".write_test"
+        t.write_text("ok")
+        t.unlink()
+        return True
+    except OSError:
+        return False
+
+
+# exe の隣に書き込めない場合（Mac のダウンロード直後・/usr/bin など）はホームフォルダへ
+if FROZEN and not _writable(DATA_DIR):
+    DATA_DIR = Path.home() / "music-Ai"
+ROOT = DATA_DIR
+SONGS_DIR = DATA_DIR / "songs"
+SPECS_DIR = DATA_DIR / "specs"
+OUTPUT_DIR = DATA_DIR / "output"
+
+
+def ensure_data_dirs() -> None:
+    """exe 初回起動時、サンプル曲を exe の隣の songs/ にコピーする。"""
+    SONGS_DIR.mkdir(parents=True, exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    bundled = RESOURCE_DIR / "songs"
+    if FROZEN and bundled.is_dir() and not any(SONGS_DIR.glob("*.yaml")):
+        for f in bundled.glob("*.yaml"):
+            shutil.copy2(f, SONGS_DIR / f.name)
 
 
 def safe_name(name: str) -> str:
