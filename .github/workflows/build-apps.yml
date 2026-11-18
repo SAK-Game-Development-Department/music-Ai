@@ -1,6 +1,7 @@
 # Windows / Mac / Linux 向けのアプリ（実行ファイル）をビルドする
 #  - main への push・手動実行: 各 OS のファイルを Actions の Artifacts に置く
-#  - v* タグの push: GitHub Releases にダウンロード用ファイルを公開する
+#  - v* タグの push、または手動実行で release_tag（例: v0.1.0）を指定:
+#    GitHub Releases にダウンロード用ファイルを公開する（タグが無ければ作る）
 name: build-apps
 
 on:
@@ -11,6 +12,11 @@ on:
   pull_request:
     paths: ["musicai/**", "packaging/**", "songs/**", "requirements.txt", ".github/workflows/build-apps.yml"]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "公開するバージョン（例: v0.1.0）。空ならビルドだけ"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -97,7 +103,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && startsWith(inputs.release_tag, 'v'))
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -109,6 +115,9 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          name: music-Ai ${{ inputs.release_tag || github.ref_name }}
           files: packages/*
           body: |
             ## ダウンロード
