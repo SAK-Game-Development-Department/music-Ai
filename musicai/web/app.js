@@ -367,6 +367,7 @@ async function eLoad(name) {
   $("#e-audio").removeAttribute("src");
   $("#e-downloads").replaceChildren();
   eShow(r.view);
+  hLoad(r.name);
 }
 
 function eShow(v) {
@@ -531,10 +532,81 @@ $("#e-delete").addEventListener("click", async () => {
   if (!E.cur || !confirm(`「${E.cur.view.title}」（${E.cur.name}.yaml）を削除しますか？`)) return;
   await api("/api/delete", { name: E.cur.name });
   E.cur = null; await refreshSongs();
+  hClear();
   if ($("#e-song").value) eLoad($("#e-song").value);
   toast("削除しました");
 });
 window.addEventListener("resize", debounce(() => drawRoll(-1), 200));
+
+// ---------------- バージョン（履歴） ----------------
+const H = { name: null, versions: [], sel: [] };
+const fmtAt = (iso) => { const d = new Date(iso); return isNaN(d) ? iso : d.toLocaleString("ja-JP", { dateStyle: "medium", timeStyle: "short" }); };
+
+function hClear() { H.name = null; H.versions = []; H.sel = []; $("#h-list").replaceChildren(); $("#h-diff").replaceChildren(); }
+function hOff(message) {
+  hClear();
+  $("#h-off").textContent = "📜 " + message + "（ほかの機能はふつうに使えます）";
+  $("#h-off").hidden = false; $("#h-on").hidden = true;
+}
+function hOn() { $("#h-off").hidden = true; $("#h-on").hidden = false; }
+
+async function hLoad(name) {
+  try {
+    const r = await api("/api/history?name=" + encodeURIComponent(name));
+    if (r.available === false) return hOff(r.message);
+    hOn();
+    H.name = name; H.versions = r.versions; H.sel = [];
+    hRender();
+  } catch (e) { hOff("履歴機能は使えません"); }
+}
+
+function hRender() {
+  const list = $("#h-list");
+  $("#h-diff").replaceChildren();
+  if (!H.versions.length) {
+    list.replaceChildren(h("li", { class: "muted" }, "まだバージョンがありません。"));
+    return;
+  }
+  list.replaceChildren(...[...H.versions].reverse().map((v) => {
+    const cb = h("input", { type: "checkbox", id: "h-v" + v.no });
+    cb.checked = H.sel.includes(v.no);
+    cb.addEventListener("change", () => {
+      H.sel = H.sel.filter((n) => n !== v.no);
+      if (cb.checked) { H.sel.push(v.no); if (H.sel.length > 2) H.sel.shift(); }
+      hRender(); if (H.sel.length === 2) hDiff();
+    });
+    return h("li", {}, h("label", { class: "inline", for: "h-v" + v.no }, cb,
+      h("b", {}, `バージョン ${v.no}`), h("span", { class: "muted" }, ` ${fmtAt(v.at)}`)),
+      v.note ? h("div", { class: "note" }, v.note) : null,
+      h("div", { class: "muted" }, v.summary));
+  }));
+}
+
+async function hDiff() {
+  const [a, b] = [...H.sel].sort((x, y) => x - y);
+  const r = await api(`/api/history/diff?name=${encodeURIComponent(H.name)}&a=${a}&b=${b}`).catch((e) => { toast(e.message, true); throw e; });
+  if (r.available === false) return hOff(r.message);
+  const box = $("#h-diff");
+  const changed = r.sections.filter((s) => s.changed);
+  box.replaceChildren(h("h3", {}, `バージョン ${a} → バージョン ${b} の歌詞の違い`),
+    !changed.length ? h("p", { class: "muted" }, "歌詞に違いはありません。") : null,
+    ...changed.map((s) => h("div", { class: "dsec" },
+      h("b", {}, `【${s.name}】`), s.status === "added" ? h("span", { class: "muted" }, " （このパートが追加されました）") : null,
+      s.status === "removed" ? h("span", { class: "muted" }, " （このパートが削除されました）") : null,
+      ...s.lines.map((l) => l.type === "change"
+        ? h("div", { class: "dl change" }, h("div", { class: "remove" }, "－ " + l.old), h("div", { class: "add" }, "＋ " + l.new))
+        : h("div", { class: "dl " + l.type }, (l.type === "add" ? "＋ " : l.type === "remove" ? "－ " : "　 ") + l.text)))));
+}
+
+$("#h-save").addEventListener("click", async () => {
+  if (!E.cur) return toast("曲を選んでください", true);
+  await eSave(E.cur.name);  // 作業中の内容をまず保存してから、バージョンにする
+  const r = await api("/api/version/save", { name: E.cur.name, note: $("#h-note").value }).catch((e) => { toast(e.message, true); throw e; });
+  if (r.available === false) return hOff(r.message);
+  if (r.saved) $("#h-note").value = "";
+  toast(r.message);
+  hLoad(E.cur.name);
+});
 
 // ====================================================================
 //  音楽のきほん

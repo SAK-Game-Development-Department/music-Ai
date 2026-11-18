@@ -148,6 +148,21 @@
     <div id="e-warn" class="warn" hidden></div>
   </div>
 
+  <div class="panel" id="e-history">
+    <h2>📜 バージョン <small class="muted">節目の状態を残して、あとから歌詞の違いを見られます</small></h2>
+    <p id="h-off" class="hint" hidden></p>
+    <div id="h-on">
+      <div class="row gap wrap">
+        <input id="h-note" placeholder="メモ（任意）例: サビの歌詞を変えた" style="flex:1;min-width:14em">
+        <button id="h-save" class="primary">バージョンを保存</button>
+      </div>
+      <p class="hint">「保存」は作業中のファイルを上書きするだけで、履歴には残りません。残したい節目で「バージョンを保存」を押します。
+        下の一覧から <b>2 つ選ぶ</b>と、歌詞の違いが行ごとに表示されます。</p>
+      <ul id="h-list" class="timeline"></ul>
+      <div id="h-diff"></div>
+    </div>
+  </div>
+
   <details class="panel">
     <summary><b>✏️ 曲データを直接編集（上級）</b> <span class="muted">— Claude に「サビを高くして」等と頼むとここを書き換えてくれます</span></summary>
     <p class="hint">melody: <code>音名:拍数</code>（C4 = 真ん中のド、<code>r</code> = 休符、<code>~</code> = 前の文字を伸ばす、<code>|</code> = 小節線）。

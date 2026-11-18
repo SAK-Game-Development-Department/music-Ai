@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import yaml
 
-from . import service
+from . import history, service
 from .composer import compose
 from .lyrics import phrases, split_mora
 from .song import song_from_dict
@@ -74,6 +74,45 @@ def api_delete(_q, b):
     if p.exists():
         p.unlink()
     return {"ok": True}
+
+
+def _history() -> history.History:
+    return history.History(service.SONGS_DIR)
+
+
+def _unavailable() -> dict:
+    return {"available": False, "message": history.UNAVAILABLE_MESSAGE}
+
+
+def api_history_status(_q, _b):
+    return _history().status()
+
+
+def api_history(q, _b):
+    name = service.safe_name(q.get("name", [""])[0])
+    try:
+        versions = _history().list_versions(name)
+    except history.HistoryUnavailable:
+        return _unavailable()
+    return {"available": True, "name": name, "versions": [v.to_dict() for v in versions]}
+
+
+def api_history_diff(q, _b):
+    name = service.safe_name(q.get("name", [""])[0])
+    try:
+        d = _history().lyrics_diff(name, int(q.get("a", [""])[0]), int(q.get("b", [""])[0]))
+    except history.HistoryUnavailable:
+        return _unavailable()
+    return {"available": True, "name": name, **d}
+
+
+def api_version_save(_q, b):
+    name = service.safe_name(b.get("name", ""))
+    try:
+        r = _history().save_version(name, b.get("note", ""))
+    except history.HistoryUnavailable:
+        return _unavailable()
+    return {"available": True, "name": name, **r}
 
 
 def api_render(_q, b):
@@ -135,6 +174,10 @@ ROUTES = {
     ("POST", "/api/check"): api_check,
     ("POST", "/api/save"): api_save,
     ("POST", "/api/delete"): api_delete,
+    ("GET", "/api/history/status"): api_history_status,
+    ("GET", "/api/history"): api_history,
+    ("GET", "/api/history/diff"): api_history_diff,
+    ("POST", "/api/version/save"): api_version_save,
     ("POST", "/api/render"): api_render,
     ("POST", "/api/compose"): api_compose,
     ("POST", "/api/kaeuta"): api_kaeuta,
