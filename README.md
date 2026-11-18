@@ -58,6 +58,7 @@ python -m musicai migrate songs specs                   # 古い形式のファ�
 python -m musicai check songs/ramen.yaml                # 楽曲ルールの検証（先に validate も行う）
 python -m musicai render songs/ramen.yaml               # → output/ に MP3・MIDI・楽譜
 python -m musicai export songs/ramen.yaml --format midi,musicxml,lyrics   # 音を作らず書き出し（wav,mp3 も指定可）。validate と check を通った曲だけ
+python -m musicai pipeline compose specs/hajimari.yaml --name 新曲   # 作曲→検証→書き出しを一括で（失敗しても何も変わらない）
 python -m musicai mcp                                   # AI アプリ向けの MCP サーバ（下の「AI アプリから使う」）
 python -m musicai import "https://youtu.be/..." --start 45 --end 90   # YouTube / 音声ファイルを取り込む
 python -m musicai mora "きょうはいいてんき"              # モーラを数える
@@ -90,6 +91,7 @@ musicai/
   history.py   曲のバージョン履歴・歌詞の差分（git を使うのはここだけ）
   tools.py     compose / kaeuta / validate / export（CLI と MCP が共通で呼ぶ）
   mcp_server.py  MCP サーバ（標準入出力。標準ライブラリだけ）
+  pipeline.py  生成→検証→書き出しの一括実行（失敗時はロールバック）
   composer.py  歌詞 + 進行 → メロディ自動生成
   kaeuta.py    替え歌（歌詞差し替え + メロディ自動調整）
   transcribe.py 音源の聴き取り（テンポ・キー・コード・歌メロ）とカラオケ化
@@ -119,9 +121,10 @@ tests/   python -m unittest discover -s tests
 | `kaeuta` | 保存済みの曲の歌詞を差し替え、メロディを自動調整して保存 |
 | `validate` | ファイル構造をスキーマで検証（`check: true` で楽曲ルールの警告も） |
 | `export` | `output/` に MIDI・楽譜・歌詞カード（`wav`・`mp3` も指定可）を書き出し |
+| `make_song` | 作曲（または替え歌）→ `validate` → `check` → 書き出しを**一括で**。失敗しても `songs/` と `output/` は変わらない |
 
 安全のため、書き込むのは `songs/` と `output/` の中だけです。同名の曲は `overwrite: true` を付けないと上書きしません。
-`export` は `validate` と `check`（警告ゼロ）を通らない曲は書き出しません。
+`export` と `make_song` は `validate` と `check`（警告ゼロ）を通らない曲は書き出しません。`make_song` は、途中のどこで失敗しても `songs/` と `output/` を変えません（上書きするときは、上書き前の内容を自動でバージョンに残します）。
 
 接続の例（このフォルダで実行）:
 
