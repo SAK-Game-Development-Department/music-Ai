@@ -233,11 +233,273 @@ def make_line(n: int, pool: tuple[list[Frag], list[Frag]], rng: random.Random, u
     return " ".join(([head] if head else []) + [f.text for f in parts]) + (tail or "")
 
 
+# 原曲の行末から引きつぐ語尾（終助詞など）
+KEEP_ENDINGS = ("よ", "ね", "さ", "わ", "ぞ")
+
+
+def _kana_words(line: str) -> list[str]:
+    """原曲の行 → 言葉（よみ）の並び。漢字の読みは reading で調べる。"""
+    from .reading import ReadingUnavailable, words
+
+    try:
+        return [w for w in words(line) if w.strip() and w.strip() not in ("、", "。")]
+    except ReadingUnavailable:
+        return [line]
+
+
+def _mora(text: str) -> int:
+    return len([s for s in split_mora(text) if not s.melisma])
+
+
+def find_hooks(lines: list[str]) -> set[str]:
+    """原曲で 2 回以上出てくる 3 モーラ以上の言葉（サビの「決めの言葉」など）。"""
+    count: dict[str, int] = {}
+    for ln in dict.fromkeys(lines):  # 同じ行のくり返し（サビの 2 回目など）は 1 回と数える
+        for w in set(_kana_words(ln)):
+            w = w.strip()
+            try:
+                if _mora(w) >= 3:
+                    count[w] = count.get(w, 0) + 1
+            except ValueError:
+                pass
+    return {w for w, c in count.items() if c >= 2}
+
+
+def _plan_from_original(orig: str, n: int, hooks: set[str]) -> tuple[str, str, str]:
+    """原曲の行から (先頭に残す決めの言葉, 末尾に残す語尾, —) を決める。残りの長さは呼び出し側で計算。"""
+    ws = [w.strip() for w in _kana_words(orig) if w.strip()]
+    head = ""
+    tail = ""
+    if ws and ws[0] in hooks:
+        head = ws[0]
+        # 「ありがとう ありがとう」のように続けてくり返すときはまとめて残す
+        if len(ws) > 1 and ws[1] == ws[0]:
+            head = ws[0] + " " + ws[1]
+    try:
+        kana = "".join(s.text for s in split_mora(orig_kana(orig)))
+    except ValueError:
+        kana = ""
+    if kana.endswith(KEEP_ENDINGS) and not (head and kana.endswith(head.replace(" ", ""))):
+        tail = kana[-1]
+    if _mora(head.replace(" ", "")) + len(tail) >= n - 2:  # 残りが短すぎるなら残さない
+        head = ""
+    return head, tail, ""
+
+
+def orig_kana(line: str) -> str:
+    from .reading import ReadingUnavailable, to_ruby
+
+    try:
+        return to_ruby(line)
+    except ReadingUnavailable:
+        return line
+
+
+# ---------------------------------------------------------------- 原曲の骨組みを残して言葉を入れ替える
+# テーマごとの名詞（原曲の名詞と同じ長さのものと入れ替える）
+NOUNS: dict[str, list[str]] = {
+    "恋": ["きみ", "ぼく", "て", "め", "こえ", "ゆめ", "そら", "はな", "こい", "むね", "ほほ", "えがお", "ひとみ",
+          "こころ", "ことば", "おもい", "なみだ", "やくそく", "ゆびさき", "てがみ", "ふたり", "あした", "さくら", "はる"],
+    "友情": ["きみ", "とも", "かた", "て", "ゆめ", "そら", "みち", "なかま", "ともだち", "えがお", "きずな", "ほうかご",
+            "きょうしつ", "グラウンド", "なつ", "はる", "あした", "おもいで", "じてんしゃ", "ふたり"],
+    "夢": ["ゆめ", "そら", "ほし", "みち", "かぜ", "て", "ひかり", "みらい", "あした", "つばさ", "とびら", "ちず",
+          "ゴール", "スタート", "こころ", "なみだ", "あせ", "いっぽ", "はじまり", "きぼう"],
+    "夏": ["なつ", "うみ", "そら", "なみ", "かぜ", "せみ", "くも", "ひ", "すいか", "はなび", "まつり", "ゆかた",
+          "ひまわり", "ラムネ", "かきごおり", "ビーチ", "しおかぜ", "ゆうだち", "なつやすみ", "むぎわら"],
+    "冬": ["ゆき", "ふゆ", "かぜ", "よる", "ほし", "て", "いき", "こたつ", "マフラー", "てぶくろ", "ゆきだるま",
+          "イルミネーション", "ぬくもり", "ココア", "みかん", "クリスマス", "まち", "ひかり", "ふたり"],
+    "ごはん": ["めし", "パン", "めん", "こめ", "さら", "ラーメン", "カレー", "からあげ", "おにぎり", "ぎょうざ", "スープ",
+            "おかず", "たまご", "デザート", "やきそば", "おやつ", "べんとう", "おなか", "さいふ", "はし"],
+}
+# 形容詞（名詞の前に付くもの）
+ADJECTIVES = ["あおい", "あかい", "しろい", "あつい", "ながい", "まるい", "やさしい", "まぶしい", "うれしい", "さみしい",
+              "ちいさな", "おおきな", "あたらしい", "なつかしい", "つめたい", "あたたかい", "おいしい", "きらきらの",
+              "まっしろな", "まっさおな", "ひみつの", "ふしぎな"]
+# 残す言葉（助詞・語尾など）
+FUNCTION_WORDS = {"は", "が", "を", "に", "の", "で", "と", "も", "へ", "や", "よ", "ね", "さ", "わ", "な", "か", "ぞ",
+                  "から", "まで", "けど", "より", "だけ", "て", "た", "だ", "う", "ない", "たら", "ば", "ら",
+                  "でも", "なら", "って", "ても",
+                  # 原曲のまま残す副詞など（言い回しの骨組み。行の頭でもよい）
+                  "まだ", "もう", "また", "ずっと", "きっと", "いつも", "いつか", "どこ", "なぜ", "そっと", "もっと",
+                  "ほら", "ねえ", "ああ", "ただ", "すこし", "とても", "いま"}
+_VERB_END = tuple("たるうくすつぬむぶぐいだ")
+ADVERBS_KEEP = {"まだ", "もう", "また", "ずっと", "きっと", "いつも", "いつか", "どこ", "なぜ", "そっと", "もっと",
+                "ほら", "ねえ", "ああ", "ただ", "すこし", "とても", "いま"}
+
+
+def _verb_pool(theme: str, stage: str | None) -> tuple[list[Frag], list[Frag]]:
+    """(て形などの「つなぎ」の動詞句, 文末の動詞・形容詞句)。場面を指定すればその場面から。"""
+    stages = [stage] if stage else list(STAGES)
+    te, end = [], []
+    for st in stages:
+        leads, ends = _pool(theme, st)
+        te += [f for f in leads if f.text.endswith(("て", "で"))]
+        end += [f for f in ends if f.text.endswith(_VERB_END)]
+    return te, end
+
+
+_PARTICLES = ("から", "まで", "けど", "は", "が", "を", "に", "も", "で", "と", "の", "へ")
+
+
+def _chunks(line: str) -> list[tuple[str, str, str]]:
+    """原曲の 1 行 → [(種類, 表記, よみ)]。種類: fn（残す）/ noun / adj / pred（動詞・形容詞のまとまり）/ space"""
+    from .reading import segments
+
+    def kana(t):
+        return all("ぁ" <= c <= "ゖ" or c == "ー" for c in t)
+
+    segs = [(o, y) for o, y in segments(line)]
+    out: list[tuple[str, str, str]] = []
+    i = 0
+    while i < len(segs):
+        o, y = segs[i]
+        first = not any(k != "space" for k, _, _ in out)
+        nxt = segs[i + 1][0] if i + 1 < len(segs) else ""
+        if not o.strip():
+            out.append(("space", o, y))
+            i += 1
+            continue
+        has_kanji = any("\u3400" <= c <= "\u9fff" for c in o)
+        if kana(o) and o in FUNCTION_WORDS and (not first or o in ADVERBS_KEEP):
+            out.append(("fn", o, y))
+            i += 1
+            continue
+        if kana(o):
+            # かなだけのまとまり。先頭の助詞は残す（行の最初は助詞ではない）
+            head = "" if first else next((p for p in _PARTICLES if o.startswith(p) and len(o) > len(p) + 1), "")
+            if head:
+                out.append(("fn", head, head))
+                o, y = o[len(head):], y[len(head):]
+            # 後ろの助詞（の・を など）は名詞 + 助詞、文末の よ・ね は残す
+            tailp = next((p for p in ("の", "を", "が", "に", "は", "も", "へ") if o.endswith(p) and len(o) > 2), "")
+            if tailp:
+                out.append(("noun", o[: -len(tailp)], y[: -len(tailp)]))
+                out.append(("fn", tailp, tailp))
+            else:
+                tail = o[-1] if o[-1] in ("よ", "ね") and len(o) > 2 else ""
+                out.append(("pred", o[: len(o) - len(tail)], y[: len(y) - len(tail)]))
+                if tail:
+                    out.append(("fn", tail, tail))
+            i += 1
+            continue
+        # 「僕ら」「君たち」は名詞
+        noun_suffix = has_kanji and (o.endswith("ら") or o.endswith("たち")) and not o.endswith(("たら", "ら゛"))
+        stem = has_kanji and "ぁ" <= o[-1] <= "ゖ" and not noun_suffix  # 「運ん」「走り」のような動詞の語幹
+        if has_kanji and nxt == "な" and stem:
+            out.append(("adj", o + nxt, y + segs[i + 1][1]))  # 「小さ」+「な」→ 形容詞
+            i += 2
+            continue
+        if has_kanji and nxt and kana(nxt) and (stem or not nxt.startswith(_PARTICLES + ("よ", "ね", "さ", "わ", "ぞ"))):
+            # 動詞の語幹 + 活用（「開け」+「たら」、「歩い」+「てゆくよ」）→ ひとまとまり。文末の よ/ね は残す
+            tail_o, tail_y = segs[i + 1]
+            keep = tail_o[-1] if tail_o.endswith(("よ", "ね")) and len(tail_o) > 1 else ""
+            out.append(("pred", o + tail_o[: len(tail_o) - len(keep)], y + tail_y[: len(tail_y) - len(keep)]))
+            if keep:
+                out.append(("fn", keep, keep))
+            i += 2
+            continue
+        if has_kanji and o.endswith("い") and not o.endswith("ない"):
+            out.append(("adj", o, y))  # 「新しい」など（名詞の前）
+            i += 1
+            continue
+        # 漢字 + 後ろの助詞（「歌を」）→ 名詞 + 助詞
+        tailp = next((p for p in ("を", "が", "に", "は", "の", "で", "と", "も", "へ") if has_kanji and o.endswith(p)
+                      and len(o) > 1), "")
+        if tailp:
+            out.append(("noun", o[: -len(tailp)], y[: -len(tailp)]))
+            out.append(("fn", tailp, tailp))
+            i += 1
+            continue
+        if has_kanji and "ぁ" <= o[-1] <= "ゖ" and not noun_suffix:
+            out.append(("pred", o, y))  # 「光る」「届け」のように送りがな付き
+            i += 1
+            continue
+        out.append(("noun", o, y))
+        i += 1
+    # 続いた動詞のまとまり（「走り」+「出す」）は 1 つにする
+    merged: list[tuple[str, str, str]] = []
+    for c in out:
+        if merged and c[0] == "pred" and merged[-1][0] == "pred":
+            merged[-1] = ("pred", merged[-1][1] + c[1], merged[-1][2] + c[2])
+        else:
+            merged.append(c)
+    return merged
+
+
+def transform_line(line: str, theme: str, stage: str | None, rng: random.Random, used: set[str],
+                   hooks: set[str]) -> str | None:
+    """原曲の行の骨組み（助詞・語尾・決めの言葉）を残して、名詞・動詞・形容詞を同じ長さの言葉に入れ替える。
+
+    同じ長さの言葉がないところは原曲の言葉のまま残す。入れ替えが半分未満なら None（ほかの作り方にまかせる）。
+    """
+    try:
+        chunks = _chunks(line)
+    except Exception:  # noqa: BLE001  読みが調べられないときなど
+        return None
+    nouns: dict[int, list[str]] = {}
+    for w in NOUNS.get(theme, []):
+        nouns.setdefault(_mora(w), []).append(w)
+    adjs: dict[int, list[str]] = {}
+    for w in ADJECTIVES:
+        adjs.setdefault(_mora(w), []).append(w)
+    te, end = _verb_pool(theme, stage)
+    te_all, end_all = _verb_pool(theme, None)
+    out: list[str] = []
+    content = changed = 0
+    line_words = {y for _, _, y in chunks}
+
+    def ok(w: str) -> bool:  # 同じ行の言葉と重ならない（「ぼくらの ぼく」にしない）
+        return w not in used and all(w not in x and x not in w for x in line_words if len(x) >= 2)
+
+    for kind, o, y in chunks:
+        if kind in ("fn", "space"):
+            out.append(o if kind == "space" else y)
+            continue
+        if y.replace(" ", "") in hooks:  # くり返し出てくる決めの言葉は残す
+            out.append(y)
+            continue
+        content += 1
+        m = _mora(y)
+        pick = None
+        if kind == "noun":
+            cands = [w for w in nouns.get(m, []) if ok(w)]
+        elif kind == "adj":
+            cands = [w for w in adjs.get(m, []) if ok(w)]
+        else:
+            is_te = y.endswith(("て", "で"))
+            pools = (te, te_all) if is_te else (end, end_all)
+            cands = []
+            for pool in pools:
+                cands = [f.text for f in pool if f.mora == m and ok(f.text)]
+                if cands:
+                    break
+        if cands:
+            pick = rng.choice(cands)
+            used.add(pick)
+            changed += 1
+        out.append(pick or y)
+    if content == 0 or changed * 2 < content:
+        return None
+    # 読みやすいように、助詞のあと（次に言葉が続くとき）で区切る
+    text = ""
+    for k, ((kind, _, _), w) in enumerate(zip(chunks, out)):
+        if kind == "space":
+            text += " "
+            continue
+        text += w
+        nxt = chunks[k + 1][0] if k + 1 < len(chunks) else None
+        if kind == "fn" and nxt in ("noun", "adj", "pred") and not text.endswith(" "):
+            text += " "
+    return text
+
+
 def generate(sections: list[tuple[str, list[int]]], story: bool = True, theme: str | None = None,
              seed: int | None = None, originals: dict[str, list[str]] | None = None) -> tuple[dict[str, str], str]:
     """sections: [(セクション名, [フレーズごとのモーラ数...]), ...]（曲の順）。
 
-    originals: {セクション名: [元の歌詞の各行]}（あれば原曲の「くり返し」と「韻」をまねる）
+    originals: {セクション名: [元の歌詞の各行（漢字まじりでよい）]}。あれば「原曲をきれいに替える」:
+        行の長さ・くり返し・行末の韻に加えて、原曲の語尾（〜よ / 〜ね など）と、
+        くり返し出てくる決めの言葉（行頭）を残し、残りの部分だけを新しい言葉にする
     返り値: ({セクション名: 歌詞（フレーズごとに改行）}, 使ったテーマ)
     """
     rng = random.Random(seed)
@@ -248,6 +510,7 @@ def generate(sections: list[tuple[str, list[int]]], story: bool = True, theme: s
     used: set[str] = set()
     out: dict[str, str] = {}
     same_as_orig: dict[tuple[str, int], str] = {}  # 原曲の同じ行 → 同じ新しい行（サビのくり返し）
+    hooks = find_hooks([ln for lines in originals.values() for ln in lines])
     gi = 0
     for name, counts in sections:
         lines = []
@@ -269,8 +532,25 @@ def generate(sections: list[tuple[str, list[int]]], story: bool = True, theme: s
                 names_in_pool = {f.text for f in pool[0] + pool[1]}
                 if len(used & names_in_pool) > len(names_in_pool) * 0.7:  # この場面の言葉を使い切りそうなら再利用を許す
                     used.difference_update(names_in_pool)
-                rhyme = _last_vowel(o) if o else (prev_vowel if k % 2 == 1 else None)
-                line = make_line(n, pool, rng, used, rhyme)
+                transformed = transform_line(o, th, stage if story else None, rng, used, hooks) if o else None
+                if transformed is not None and _mora(transformed) == n:
+                    line = transformed
+                elif o:
+                    keep_head, keep_tail, _ = _plan_from_original(o, n, hooks)
+                    body_n = n - _mora(keep_head.replace(" ", "")) - len(keep_tail)
+                    rhyme = None if keep_tail else _last_vowel(orig_kana(o))
+                    body = make_line(body_n, pool, rng, used, rhyme) if body_n > 0 else ""
+                    for _ in range(8):  # 「〜よよ」「〜ねね」にならないように作り直す
+                        if not (keep_tail and body.endswith(keep_tail)):
+                            break
+                        body = make_line(body_n, pool, rng, used, None)
+                    if keep_tail and body.endswith(keep_tail):
+                        keep_tail = ""
+                        body = make_line(n, pool, rng, used, None)
+                    line = " ".join(x for x in (keep_head, body) if x) + keep_tail
+                else:
+                    rhyme = prev_vowel if k % 2 == 1 else None
+                    line = make_line(n, pool, rng, used, rhyme)
                 if key:
                     same_as_orig[key] = line
             lines.append(line)
@@ -278,6 +558,13 @@ def generate(sections: list[tuple[str, list[int]]], story: bool = True, theme: s
             gi += 1
         out[name] = "\n".join(lines)
     return out, theme
+
+
+def _display_lines(text: str) -> list[str]:
+    """歌詞（{漢字|よみ} の書式）→ 表示用の行（漢字のまま）。"""
+    from .lyrics import display_lyrics
+
+    return display_lyrics(text)
 
 
 def phrase_counts(song, with_originals: bool = False):
@@ -309,11 +596,13 @@ def phrase_counts(song, with_originals: bool = False):
             try:
                 ph = lyric_phrases(split_mora(spec["lyrics"]))
                 lyr = [len(p) for p in ph]
-                lyr_lines = ["".join(s.text for s in p if not s.melisma) for p in ph]
+                lyr_lines = _display_lines(spec["lyrics"])
+                if len(lyr_lines) != len(ph):
+                    lyr_lines = ["".join(s.text for s in p if not s.melisma) for p in ph]
             except ValueError:
                 lyr = []
-        if lyr and sum(lyr) == sung:
-            counts = lyr  # 元の歌詞が音符とぴったり → その区切りを使う
+        if lyr:
+            counts = lyr  # 元の歌詞があれば、その行の長さのまま（原曲どおり。メロディは替え歌のとき自動で合わせる）
         else:
             # 音符の数に合わせる（元の歌詞の行数を目安に、長い音の後ろでも区切る）
             groups = merge_small_phrases(notes, melody_phrases(notes, len(lyr) or None))

@@ -134,6 +134,10 @@ label.switch { display: inline-flex; align-items: center; gap: 6px; font-size: 1
 label.switch input { width: 18px; height: 18px; accent-color: var(--accent); }
 textarea.auto { border-color: var(--accent); border-style: dashed; }
 label.switch.small { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+details.orig-paste { margin: 6px 0 12px; padding: 8px 12px; border: 1px dashed var(--line); border-radius: 10px; }
+details.orig-paste summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+details.orig-paste textarea { margin-top: 6px; }
+.k-orig .phr.kanji { font-size: 14px; }
 .k-sec.inst .k-orig { opacity: .55; }
 .k-sec.inst textarea { opacity: .6; }
 

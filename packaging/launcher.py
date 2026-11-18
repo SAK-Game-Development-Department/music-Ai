@@ -22,6 +22,9 @@ def selftest() -> int:
     assert sum(1 for s in imported.sections.values() for n in s.notes if not n.is_rest) > 10, "聴き取りに失敗"
     (service.SONGS_DIR / f"{res['name']}.yaml").unlink()
     import yt_dlp  # noqa: F401  同梱されているか
+    from musicai.reading import to_ruby
+
+    assert to_ruby("夜空に光る") == "{夜空|よぞら}に{光|ひか}る", "漢字の読みが使えません"
     print("SELFTEST OK", files, "->", service.OUTPUT_DIR, "| import:", res["log"][-2])
     return 0
 

@@ -99,8 +99,20 @@ def is_url(text: str) -> bool:
     return bool(re.match(r"https?://", (text or "").strip()))
 
 
+def find_subtitles(out_dir: Path) -> Path | None:
+    """download_audio が保存した日本語の字幕ファイル（あれば）。"""
+    for pat in ("source.ja*.vtt", "source.ja*.srt", "source.*.vtt", "source.*.srt"):
+        hits = sorted(out_dir.glob(pat))
+        if hits:
+            return hits[0]
+    return None
+
+
 def download_audio(url: str, out_dir: Path, progress=None) -> tuple[Path, str]:
-    """yt-dlp で音声だけをダウンロード。(ファイル, タイトル) を返す。"""
+    """yt-dlp で音声だけをダウンロード。(ファイル, タイトル) を返す。
+
+    動画に日本語の字幕（歌詞）があれば source.ja.vtt として一緒に保存する（find_subtitles で取り出す）。
+    """
     try:
         yt_dlp = ensure_package("yt_dlp", "yt-dlp[default]", progress)
     except ImportError:
@@ -124,13 +136,25 @@ def download_audio(url: str, out_dir: Path, progress=None) -> tuple[Path, str]:
         "max_filesize": 200 * 1024 * 1024,
         # YouTube の署名解決に使える JS ランタイムがあれば使う（deno / node / bun）
         "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
+        # 歌詞の字幕（日本語）。投稿者の字幕を優先し、なければ自動字幕
+        "writesubtitles": True,
+        "writeautomaticsub": True,
+        "subtitleslangs": ["ja", "ja-JP", "ja-orig"],
+        "subtitlesformat": "vtt/srt/best",
     }
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
+
+    def run(o):
+        with yt_dlp.YoutubeDL(o) as ydl:
             info = ydl.extract_info(url, download=True)
             if info.get("_type") == "playlist" and info.get("entries"):
                 info = info["entries"][0]
-            path = Path(ydl.prepare_filename(info))
+            return info, Path(ydl.prepare_filename(info))
+
+    try:
+        try:
+            info, path = run(opts)
+        except Exception:  # noqa: BLE001  字幕の取得で失敗したときは、音声だけでやり直す
+            info, path = run({k: v for k, v in opts.items() if "sub" not in k})
     except Exception as e:  # noqa: BLE001
         msg = str(e)
         raise AudioError(

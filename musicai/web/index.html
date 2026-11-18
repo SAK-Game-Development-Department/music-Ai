@@ -125,6 +125,13 @@
         テンポ・キー・コード・歌メロを自動で聴き取り、ボーカルを弱めたカラオケ音源も作ります。<span id="i-info"></span></p>
       <p class="hint notice">⚠ 聴き取りは自動推定なので、音の高さや長さが一部ずれます。「編集・再生」で元の音源と聴き比べて直せます。
         取り込んだ曲・替え歌は <b>個人で楽しむ範囲</b> で使ってください。公開する場合は元の曲の権利者の許諾が必要です。YouTube の利用規約にも従ってください。</p>
+      <details class="orig-paste">
+        <summary>📝 原曲の歌詞（任意）— わかれば貼り付けてください</summary>
+        <p class="hint">YouTube に<b>歌詞の字幕</b>があれば自動で使います（字幕の出ている所 = 歌、出ていない所 = 間奏）。
+          字幕がないときは、ここに原曲の歌詞を貼ると、歌のパートに順番どおりに入れて、歌詞の入らないパートを間奏にします。
+          歌詞があると、替え歌の歌詞を「原曲をきれいに替える」形で作れます。1 行 = 1 フレーズ、ブロックの間は空行で。</p>
+        <textarea id="i-lyrics" rows="6" placeholder="例:&#10;窓を開けたら&#10;風が運んだ&#10;&#10;不安もあるけど&#10;心が走り出す"></textarea>
+      </details>
       <div id="i-progress" class="progress" hidden><div class="spinner small"></div><span id="i-msg"></span></div>
       <pre id="i-log" hidden></pre>
     </div>
@@ -147,6 +154,14 @@
       入った歌詞は自由に書き換えられます（書き換えたパートはそのまま残ります）。</p>
     <p class="hint" id="k-manual-hint">元の歌詞と同じように <b>/ か改行でフレーズを区切る</b> と、息継ぎの位置が保たれます。
       文字数が違っても大丈夫：多ければ音符を割り、少なければ音を伸ばして合わせます。</p>
+    <details class="orig-paste" id="k-orig-box">
+      <summary>📝 原曲の歌詞を貼り付ける（間奏の判定と、原曲をもとにした歌詞づくりが正確になります）</summary>
+      <p class="hint">原曲の歌詞を 1 行 = 1 フレーズで貼り付けて「パートに入れる」を押すと、歌のパートに順番どおり・長さが合うように入れます。
+        歌詞が 1 行も入らなかったパートは間奏（歌わない）になります。漢字のままで大丈夫です（読みは自動。違っていたら直せます）。</p>
+      <textarea id="k-orig-text" rows="8"></textarea>
+      <div class="row gap"><span class="spacer"></span><button id="k-orig-go" class="ghost">📥 パートに入れる</button></div>
+      <pre id="k-orig-report" hidden></pre>
+    </details>
     <div id="k-sections"></div>
   </div>
   <div class="panel actions">
