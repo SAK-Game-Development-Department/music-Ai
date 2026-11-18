@@ -20,7 +20,7 @@
 曲は アプリと同じフォルダの `songs/`、書き出したファイルは `output/` に保存されます。
 
 アプリは GitHub Actions（`.github/workflows/build-apps.yml`）で各 OS 向けに自動ビルドされます。
-`v` で始まるタグ（例: `v0.2.0`）を push すると Releases に公開されます。手元でビルドする場合は `pip install pyinstaller` のあと `python packaging/build.py`（その OS 向けのファイルが `dist/` にできます）。
+`v` で始まるタグ（例: `v0.2.0`）を push するか、Actions の build-apps を手動実行して release_tag にバージョンを入れると Releases に公開されます。手元でビルドする場合は `pip install pyinstaller` のあと `python packaging/build.py`（その OS 向けのファイルが `dist/` にできます）。
 
 ## ソースから使う（Python あり）
 
