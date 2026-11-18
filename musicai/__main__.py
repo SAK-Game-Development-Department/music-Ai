@@ -9,6 +9,8 @@
   import   YouTube の URL / 音声ファイル → 曲ファイル（テンポ・キー・コード・歌メロを推定、カラオケ音源つき）
   mora     歌詞のモーラ分割を表示
   progressions  定番コード進行の一覧
+  export   曲ファイル → MIDI / MusicXML / 歌詞カード（既定）。--format で wav / mp3 も。validate と check を通ったものだけ
+  mcp      MCP サーバ（標準入出力）を起動。AI アプリから compose / kaeuta / validate / export を呼べる
   app      アプリ（ブラウザ画面）を起動
 """
 from __future__ import annotations
@@ -89,6 +91,24 @@ def cmd_migrate(a):
             print(f"{'移行できます' if a.dry_run else '移行しました'}  {f}（{before} → {after}）")
     if bad:
         sys.exit(f"{len(files)} 件中 {bad} 件を移行できませんでした")
+
+
+def cmd_export(a):
+    from .tools import EXPORT_FORMATS, ToolError, export_song_file
+
+    formats = [f.strip() for f in a.format.split(",") if f.strip()]
+    bad = [f for f in formats if f not in EXPORT_FORMATS]
+    if bad or not formats:
+        sys.exit(f"エラー: --format は {','.join(EXPORT_FORMATS)} から選んでください（{','.join(bad) or '空'}）")
+    out = Path(a.out or "output")
+    try:
+        res = export_song_file(Path(a.song), Path(a.song).stem, out, formats, a.allow_warnings)
+    except ToolError as e:
+        sys.exit(f"エラー: {e}")
+    for f, name in res["files"].items():
+        print(f"{f:<9} {out / name}")
+    if res["missing"]:
+        print("作れなかった形式: " + ", ".join(res["missing"]) + "（mp3 は ffmpeg が必要です）")
 
 
 def cmd_check(a):
@@ -178,6 +198,16 @@ def main(argv=None):
     mg.add_argument("path", nargs="+", help="YAML ファイル、またはフォルダ")
     mg.add_argument("--dry-run", action="store_true", help="書き換えずに確認だけ")
     mg.set_defaults(func=cmd_migrate)
+
+    ex = sp.add_parser("export", help="MIDI・MusicXML・歌詞カード（と音声）を書き出す")
+    ex.add_argument("song")
+    ex.add_argument("--format", default="midi,musicxml,lyrics", help="midi,musicxml,lyrics,wav,mp3 のうちカンマ区切り")
+    ex.add_argument("-o", "--out", help="出力フォルダ（既定: output）")
+    ex.add_argument("--allow-warnings", action="store_true", help="check の警告があっても書き出す")
+    ex.set_defaults(func=cmd_export)
+
+    mc = sp.add_parser("mcp", help="MCP サーバ（標準入出力）を起動")
+    mc.set_defaults(func=lambda a: __import__("musicai.mcp_server", fromlist=["serve"]).serve())
 
     m = sp.add_parser("compose", help="作曲仕様からメロディを自動生成")
     m.add_argument("spec")
