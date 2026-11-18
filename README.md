@@ -34,7 +34,7 @@
 | 画面 | できること |
 |---|---|
 | 🎼 **作曲** | キー・テンポ・アレンジを選び、パート（Aメロ/Bメロ/サビ…）ごとにコード進行と歌詞を入れて「作曲する」。歌詞のモーラ数はその場で表示。「2番」は前のパートと同じメロディで歌詞だけ変えられる |
-| 🎤 **替え歌** | 元の曲を選び、新しい歌詞を書くだけ。元の文字数との差と、どう調整するかがその場で分かる |
+| 🎤 **替え歌** | 元の曲を選び、新しい歌詞を書くだけ。元の文字数との差と、どう調整するかがその場で分かる。**YouTube の URL や音声ファイルからも取り込める**（テンポ・キー・コード・歌メロを自動で聴き取り、元の曲をカラオケ化して伴奏に） |
 | 🎹 **編集・再生** | 伴奏付きで再生、ピアノロールと歌詞がカラオケのように進む。カラオケ版（ボーカルなし）、テンポ・アレンジ変更、MP3 / WAV / MIDI / 楽譜(MusicXML) / 歌詞のダウンロード |
 | 📖 **音楽のきほん** | 定番コード進行の一覧（キーを選ぶとコード名に変換）、曲づくりのポイント |
 
@@ -50,6 +50,7 @@ python -m musicai app                                   # アプリ起動
 python -m musicai compose specs/hajimari.yaml           # 作曲
 python -m musicai kaeuta songs/hoshi.yaml --lyrics-file lyrics/ramen.yaml -o songs/ramen.yaml
 python -m musicai render songs/ramen.yaml               # → output/ に MP3・MIDI・楽譜
+python -m musicai import "https://youtu.be/..." --start 45 --end 90   # YouTube / 音声ファイルを取り込む
 python -m musicai mora "きょうはいいてんき"              # モーラを数える
 python -m musicai progressions --key G                  # 定番進行
 ```
@@ -77,6 +78,8 @@ musicai/
   song.py      曲ファイル（YAML）の読み込み・検証
   composer.py  歌詞 + 進行 → メロディ自動生成
   kaeuta.py    替え歌（歌詞差し替え + メロディ自動調整）
+  transcribe.py 音源の聴き取り（テンポ・キー・コード・歌メロ）とカラオケ化
+  audio_io.py  音声の読み書き（ffmpeg）と YouTube 取得（yt-dlp）
   arrange.py   伴奏の自動アレンジ（pop / ballad / rock / simple）
   synth.py     音源合成（母音で歌う仮歌シンセ + 楽器）
   export.py    MIDI / MusicXML / 歌詞カード

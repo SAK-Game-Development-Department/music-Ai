@@ -16,26 +16,35 @@ from .song import Note, attach_lyrics
 MIN_DUR = Fraction(1, 4)
 
 
-def melody_phrases(notes: list[Note], want: int | None = None) -> list[list[int]]:
-    """休符で区切られた、歌う音符のインデックスのまとまり。
+BREATH = Fraction(1)  # これ以上の休符をフレーズ（息継ぎ）の区切りとみなす
 
+
+def melody_phrases(notes: list[Note], want: int | None = None) -> list[list[int]]:
+    """休符で区切られたフレーズ（音符のインデックスのまとまり）。
+
+    1 拍未満の短い休符はフレーズの中の「間」として、まとまりに含める（インデックスも含む）。
     want（歌詞のフレーズ数）が休符による区切りより多いときは、
     長い音符（1.5 拍以上）の後ろでも区切る（長い順に）。
     """
     groups: list[list[int]] = []
     cur: list[int] = []
+    pending: list[int] = []  # 短い休符（次に音が来たらまとまりに入れる）
     for i, n in enumerate(notes):
         if n.is_rest:
-            if cur:
+            if cur and n.dur < BREATH:
+                pending.append(i)
+            elif cur:
                 groups.append(cur)
-                cur = []
+                cur, pending = [], []
         else:
+            cur.extend(pending)
+            pending = []
             cur.append(i)
     if cur:
         groups.append(cur)
     if want and want > len(groups):
         cands = [(notes[g[k]].dur, -g[k], gi, k) for gi, g in enumerate(groups)
-                 for k in range(len(g) - 1) if notes[g[k]].dur >= Fraction(3, 2)]
+                 for k in range(len(g) - 1) if not notes[g[k]].is_rest and notes[g[k]].dur >= Fraction(3, 2)]
         cands.sort(reverse=True)
         need = want - len(groups)
         if len(cands) >= need:
@@ -55,7 +64,7 @@ def melody_phrases(notes: list[Note], want: int | None = None) -> list[list[int]
 
 
 def _slots(group: list[Note]) -> int:
-    return sum(1 for n in group if not n.melisma)
+    return sum(1 for n in group if not n.is_rest and not n.melisma)
 
 
 def fit_group(group: list[Note], target: int) -> tuple[list[Note], list[str]]:
@@ -70,11 +79,11 @@ def fit_group(group: list[Note], target: int) -> tuple[list[Note], list[str]]:
                 break
     split = 0
     while _slots(g) < target:
-        cands = [i for i, n in enumerate(g) if n.dur / 2 >= MIN_DUR]
+        cands = [i for i, n in enumerate(g) if not n.is_rest and n.dur / 2 >= MIN_DUR]
         if not cands:
             log.append(f"⚠ 音符が短すぎてこれ以上分割できません（あと {target - _slots(g)} モーラ多い）")
             break
-        last = len(g) - 1
+        last = max(i for i, n in enumerate(g) if not n.is_rest)
 
         def score(i):
             w = g[i].dur
@@ -95,15 +104,18 @@ def fit_group(group: list[Note], target: int) -> tuple[list[Note], list[str]]:
     melis = 0
     while _slots(g) > target:
         # ① 同じ高さの隣り合う音をタイでつなぐ（短い組から）
-        pairs = [i for i in range(len(g) - 1) if g[i].pitch == g[i + 1].pitch and not g[i + 1].melisma]
+        pairs = [i for i in range(len(g) - 1) if not g[i].is_rest and g[i].pitch == g[i + 1].pitch
+                 and not g[i + 1].melisma]
         if pairs:
             i = min(pairs, key=lambda i: (g[i].dur + g[i + 1].dur, -i))
             g[i:i + 2] = [Note(g[i].pitch, g[i].dur + g[i + 1].dur, None, g[i].melisma)]
             tied += 1
             continue
         # ② メリスマ: 先頭以外で、前の音との音程が近く短い音を選ぶ（フレーズ末寄り優先）
-        cands = [i for i in range(1, len(g)) if not g[i].melisma]
+        # 直前が休符の音はメリスマにできない（伸ばす文字がない）
+        cands = [i for i in range(1, len(g)) if not g[i].is_rest and not g[i].melisma and not g[i - 1].is_rest]
         if not cands:
+            log.append(f"⚠ 歌詞が少なすぎて合わせきれません（あと {_slots(g) - target} モーラ足りない）")
             break
         i = min(cands, key=lambda i: (abs(g[i].pitch - g[i - 1].pitch) > 2, g[i].dur, -i))
         g[i].melisma = True

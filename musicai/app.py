@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import re
 import mimetypes
 import threading
 import traceback
@@ -128,6 +129,77 @@ def api_chords(_q, b):
     return {"chords": progression_to_chords(b.get("progression", ""), key)}
 
 
+# ---------------- 取り込み（時間がかかるのでバックグラウンドで実行） ----------------
+JOBS: dict[str, dict] = {}
+
+
+def _run_import(job_id: str, source: str, start, end, title):
+    job = JOBS[job_id]
+
+    def progress(msg):
+        job["message"] = msg
+
+    try:
+        with _render_lock:
+            job["result"] = service.import_song(source, start, end, title, progress)
+        job["state"] = "done"
+    except Exception as e:  # noqa: BLE001
+        traceback.print_exc()
+        job["state"] = "error"
+        job["error"] = str(e)
+
+
+def _parse_time(v):
+    """'1:23' / '83' / '' → 秒（None 可）。"""
+    if v in (None, ""):
+        return None
+    t = str(v).strip()
+    if ":" in t:
+        parts = [float(x) for x in t.split(":")]
+        sec = 0.0
+        for x in parts:
+            sec = sec * 60 + x
+        return sec
+    return float(t)
+
+
+def api_import(_q, b):
+    import uuid
+
+    source = (b.get("url") or b.get("upload") or "").strip()
+    if not source:
+        raise ValueError("YouTube の URL か音声ファイルを指定してください")
+    if b.get("upload"):
+        p = (service.IMPORTS_DIR / "uploads" / Path(source).name).resolve()
+        if not p.is_file():
+            raise ValueError("アップロードしたファイルが見つかりません")
+        source = str(p)
+    start = _parse_time(b.get("start")) or 0.0
+    end = _parse_time(b.get("end"))
+    job_id = uuid.uuid4().hex[:12]
+    JOBS[job_id] = {"state": "running", "message": "準備しています…"}
+    threading.Thread(target=_run_import, args=(job_id, source, start, end, b.get("title")), daemon=True).start()
+    return {"job": job_id}
+
+
+def api_job(q, _b):
+    job = JOBS.get(q.get("id", [""])[0])
+    if not job:
+        raise ValueError("ジョブが見つかりません")
+    return job
+
+
+def api_import_info(_q, _b):
+    from .transcribe import demucs_available
+
+    try:
+        import yt_dlp  # noqa: F401
+        ytdlp = True
+    except ImportError:
+        ytdlp = False
+    return {"ytdlp": ytdlp, "demucs": demucs_available()}
+
+
 ROUTES = {
     ("GET", "/api/songs"): api_songs,
     ("GET", "/api/song"): api_song,
@@ -140,7 +212,12 @@ ROUTES = {
     ("POST", "/api/kaeuta"): api_kaeuta,
     ("POST", "/api/mora"): api_mora,
     ("POST", "/api/chords"): api_chords,
+    ("POST", "/api/import"): api_import,
+    ("GET", "/api/job"): api_job,
+    ("GET", "/api/import_info"): api_import_info,
 }
+
+MAX_UPLOAD = 300 * 1024 * 1024
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -163,6 +240,8 @@ class Handler(BaseHTTPRequestHandler):
     def _handle(self, method: str):
         url = urlparse(self.path)
         path = url.path
+        if method == "POST" and path == "/api/upload":
+            return self._upload()
         fn = ROUTES.get((method, path))
         if fn:
             try:
@@ -179,11 +258,36 @@ class Handler(BaseHTTPRequestHandler):
             return
         if method != "GET":
             return self._json(404, {"error": "not found"})
+        if path.startswith("/data/imports/"):
+            return self._file(service.IMPORTS_DIR, unquote(path[len("/data/imports/"):]))
         if path.startswith("/output/"):
             return self._file(service.OUTPUT_DIR, unquote(path[len("/output/"):]), download="dl" in url.query)
         if path == "/":
             path = "/index.html"
         return self._file(WEB_DIR, unquote(path.lstrip("/")))
+
+    def _upload(self):
+        """音声ファイルを受け取って imports/uploads/ に保存。本文 = ファイルそのもの、X-Filename に名前。"""
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+            if n <= 0 or n > MAX_UPLOAD:
+                raise ValueError("ファイルが大きすぎるか空です（300MB まで）")
+            name = unquote(self.headers.get("X-Filename") or "upload")
+            name = service.safe_name(Path(name).stem)[:60] + (Path(name).suffix.lower()[:6] or ".bin")
+            d = service.IMPORTS_DIR / "uploads"
+            d.mkdir(parents=True, exist_ok=True)
+            p = d / name
+            remaining = n
+            with open(p, "wb") as f:
+                while remaining:
+                    chunk = self.rfile.read(min(remaining, 1 << 20))
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    remaining -= len(chunk)
+            self._json(200, {"upload": p.name})
+        except ValueError as e:
+            self._json(400, {"error": str(e)})
 
     def _file(self, base: Path, rel: str, download=False):
         p = (base / rel).resolve()
@@ -198,7 +302,23 @@ class Handler(BaseHTTPRequestHandler):
         if download:
             from urllib.parse import quote
             extra["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(p.name)}"
-        self._send(200, p.read_bytes(), ctype, extra)
+        data = p.read_bytes()
+        extra["Accept-Ranges"] = "bytes"
+        rng = self.headers.get("Range", "")
+        m = re.match(r"bytes=(\d*)-(\d*)$", rng.strip())
+        if m and (m.group(1) or m.group(2)):
+            size = len(data)
+            if m.group(1):
+                a = int(m.group(1))
+                b = int(m.group(2)) if m.group(2) else size - 1
+            else:
+                a, b = max(0, size - int(m.group(2))), size - 1
+            b = min(b, size - 1)
+            if a > b:
+                return self._send(416, b"", ctype, {"Content-Range": f"bytes */{size}"})
+            extra["Content-Range"] = f"bytes {a}-{b}/{size}"
+            return self._send(206, data[a:b + 1], ctype, extra)
+        self._send(200, data, ctype, extra)
 
     def do_GET(self):
         self._handle("GET")

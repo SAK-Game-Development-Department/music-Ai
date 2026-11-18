@@ -15,6 +15,9 @@ args = [
     "--add-data", f"{ROOT / 'musicai' / 'web'}:musicai/web",
     "--add-data", f"{ROOT / 'songs'}:songs",
     "--hidden-import", "musicai.app",
+    # 音声のデコードに使う ffmpeg 本体（imageio-ffmpeg に同梱）と、YouTube 取得の yt-dlp
+    "--collect-all", "imageio_ffmpeg",
+    "--collect-submodules", "yt_dlp",
     "--exclude-module", "tkinter",
     "--distpath", str(ROOT / "dist"),
     "--workpath", str(ROOT / "build"),
@@ -22,5 +25,11 @@ args = [
     str(ROOT / "packaging" / "launcher.py"),
 ]
 print(" ".join(args))
+try:
+    import yt_dlp_ejs  # noqa: F401  YouTube の署名解決スクリプト（yt-dlp[default] に含まれる）
+
+    args[-1:-1] = ["--collect-all", "yt_dlp_ejs"]
+except ImportError:
+    pass
 subprocess.run(args, check=True)
 print("\nBuild complete:", ROOT / "dist")
