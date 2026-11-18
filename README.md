@@ -121,32 +121,25 @@ tests/   python -m unittest discover -s tests
 - 仮歌シンセは母音（あいうえお）で歌う簡易版です。歌詞をはっきり歌わせるには MusicXML を NEUTRINO / Synthesizer V などへ
 - 既存曲の替え歌を公開する場合は元曲の権利に注意。サンプルはパブリックドメインのメロディ（きらきら星）+ オリジナル歌詞です
 
-## AI アプリから使う（MCP）
+## NixOS・Nix で使う
 
-`python -m musicai mcp` は、AI アプリ（Claude Desktop・Claude Code など）から次の 4 つの道具を呼べる MCP サーバです。
-
-| 道具 | できること |
-|---|---|
-| `compose` | 作曲仕様（歌詞・進行・構成）から曲を作って `songs/` に保存 |
-| `kaeuta` | 保存済みの曲の歌詞を差し替え、メロディを自動調整して保存 |
-| `validate` | ファイル構造をスキーマで検証（`check: true` で楽曲ルールの警告も） |
-| `export` | `output/` に MIDI・楽譜・歌詞カード（`wav`・`mp3` も指定可）を書き出し |
-| `make_song` | 作曲（または替え歌）→ `validate` → `check` → 書き出しを**一括で**。失敗しても `songs/` と `output/` は変わらない |
-
-安全のため、書き込むのは `songs/` と `output/` の中だけです。同名の曲は `overwrite: true` を付けないと上書きしません。
-`export` と `make_song` は `validate` と `check`（警告ゼロ）を通らない曲は書き出しません。`make_song` は、途中のどこで失敗しても `songs/` と `output/` を変えません（上書きするときは、上書き前の内容を自動でバージョンに残します）。
-
-接続の例（このフォルダで実行）:
+`flake.nix` があります（Nix に flakes を有効にしてください）。
 
 ```bash
-claude mcp add musicai -- python -m musicai mcp          # Claude Code
+nix run github:SAK-Game-Development-Department/music-Ai#app   # アプリ（ブラウザ画面）を起動
+nix run .#app                                                 # チェックアウトしたフォルダから
+nix run . -- validate songs specs                             # musicai コマンド（引数はそのまま渡る）
+nix run .#mcp                                                 # AI アプリ向けの MCP サーバ
+nix develop                                                   # 開発シェル（python -m musicai … が動く）
+nix flake check                                               # 全テストをサンドボックスで実行
 ```
 
-Claude Desktop の設定ファイル（`claude_desktop_config.json`）には、次のように書きます（`cwd` はこのフォルダ）。
-
-```json
-{ "mcpServers": { "musicai": { "command": "python", "args": ["-m", "musicai", "mcp"], "cwd": "/このフォルダのパス" } } }
-```
+- ffmpeg（MP3 書き出し・音声取り込み）と git（バージョン履歴）は、パッケージに含まれます
+- Nix のストアは書き込めないので、パッケージで動かすときは、曲などを `~/.local/share/music-ai/`（`MUSICAI_HOME` か `XDG_DATA_HOME` で変更可）に保存します。初回にサンプル曲がコピーされ、バージョン履歴のためにこのフォルダは Git で管理されます
+- `nix develop` ではソースのフォルダがそのまま保存先です（従来どおり）
+- demucs（ボーカル分離・任意）は、torch が大きいため含めていません。使いたい場合は `nix develop` の中で `pip install demucs` などで追加してください
+- 動作確認は x86_64-linux で行いました（aarch64 と macOS は未確認です）
+- `direnv` を使う人向けに `.envrc`（`use flake`）も置いています
 
 ## ライセンス
 
