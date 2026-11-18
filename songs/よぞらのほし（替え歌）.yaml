@@ -1,0 +1,37 @@
+schema_version: 1
+title: よぞらのほし（替え歌）
+key: C major
+tempo: 96
+time: 4/4
+style: pop
+structure:
+- intro
+- A
+- B
+- A2
+- outro
+sections:
+  intro:
+    chords: F | G | C | C
+  A:
+    chords: C | F C | F C | G C
+    melody: C4:1 C4 G4 G4 | A4 A4 G4:2 | F4:1 F4 E4 E4 | D4 D4 C4:2
+    lyrics: |-
+      あたらしいかお
+      きらきらしてた
+  B:
+    chords: C F | C G | C F | C G
+    melody: G4:1 G4 F4 F4 | E4 E4 D4:2 | G4:1 G4 F4 F4 | E4 E4 D4:2
+    lyrics: |-
+      ゆめをかたった
+      あしたもいっしょ
+    energy: mid
+  A2:
+    chords: C | F C | F C | G C
+    melody: C4:1 C4 G4 G4 | A4 A4 G4:2 | F4:1 F4 E4 E4 | D4 D4 C4:2
+    lyrics: |-
+      ふたりでいこう
+      きみのよこがお
+    energy: high
+  outro:
+    chords: F G | C

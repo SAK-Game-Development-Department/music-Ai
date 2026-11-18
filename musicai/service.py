@@ -69,6 +69,18 @@ def dump_yaml(data: dict) -> str:
     return yaml.dump(data, Dumper=_D, allow_unicode=True, sort_keys=False, width=1000)
 
 
+def auto_lyrics(data: dict, story: bool = True, theme: str | None = None, seed: int | None = None,
+                keep: dict[str, str] | None = None) -> tuple[dict[str, str], str]:
+    """歌詞を自動で作る。keep に歌詞があるセクションはそのまま（空のセクションだけ作る）。"""
+    from .lyricgen import generate, phrase_counts
+
+    song = song_from_dict(data)
+    keep = {k: v for k, v in (keep or {}).items() if (v or "").strip()}
+    todo = [(n, c) for n, c in phrase_counts(song) if n not in keep]
+    made, used_theme = generate(todo, story=story, theme=theme, seed=seed)
+    return {**made, **keep}, used_theme
+
+
 def kaeuta(data: dict, new_lyrics: dict[str, str], title: str | None = None) -> tuple[dict, list[str]]:
     """曲 dict の各セクションの歌詞を差し替え、メロディを合わせた新しい dict と報告を返す。"""
     from .kaeuta import fit_lyrics
@@ -106,6 +118,12 @@ def _mel_phrase_counts(notes) -> list[int]:
 
 def song_view(song: Song) -> dict:
     """GUI 表示用: セクション・ピアノロール・歌詞情報。"""
+    from .lyricgen import phrase_counts
+
+    try:
+        fit_counts = dict(phrase_counts(song))  # 替え歌で歌詞を合わせる元のメロディの、フレーズごとの数
+    except Exception:
+        fit_counts = {}
     secs = []
     timeline = []
     for start, sec in song.timeline():
@@ -135,6 +153,7 @@ def song_view(song: Song) -> dict:
             "phrases": lyr_phr,
             "sung": sum(1 for n in sec.notes if not n.is_rest and not n.melisma),
             "mel_phrases": _mel_phrase_counts(sec.notes),
+            "fit_counts": fit_counts.get(name),
             "has_melody": any(not n.is_rest for n in sec.notes),
         })
     warnings = [w for s in song.sections.values() for w in s.warnings]

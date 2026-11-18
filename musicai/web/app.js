@@ -289,7 +289,7 @@ $("#c-go").addEventListener("click", async () => {
 // ====================================================================
 //  替え歌
 // ====================================================================
-const K = { song: null };
+const K = { song: null, seed: 1 };
 async function kLoad() {
   const name = $("#k-song").value;
   if (!name) { $("#k-sections").replaceChildren(h("p", { class: "muted" }, "まだ曲がありません。① で YouTube・音声ファイルから読み込むと、ここに歌詞を書く欄が出ます。")); return; }
@@ -301,15 +301,61 @@ async function kLoad() {
   secs.sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
   $("#k-sections").replaceChildren(...secs.map(kSection));
   $("#k-report-panel").hidden = true;
+  if ($("#k-auto").checked) kAutoFill();
 }
+
+// ---- 歌詞の自動生成 ----
+function kAutoOpts() {
+  return { story: $("#k-story").checked, theme: $("#k-theme").value, seed: K.seed };
+}
+async function kAutoFill() {
+  if (!K.song) return;
+  const tas = $$("#k-sections textarea");
+  const keep = {};
+  tas.forEach((t) => { if (t.value.trim() && t.dataset.auto !== "1") keep[t.dataset.sec] = t.value; });
+  try {
+    const r = await api("/api/lyrics", { yaml: K.song.yaml, keep, ...kAutoOpts() });
+    if ($("#k-theme").options.length <= 1) {
+      for (const th of r.themes) $("#k-theme").append(h("option", { value: th }, th));
+    }
+    tas.forEach((t) => {
+      if (keep[t.dataset.sec] !== undefined || r.lyrics[t.dataset.sec] === undefined) return;
+      t.value = r.lyrics[t.dataset.sec];
+      t.dataset.auto = "1";
+      t.classList.add("auto");
+      t.dispatchEvent(new Event("input"));  // モーラ数の表示を更新（isTrusted=false なので自動のまま）
+    });
+    toast(`歌詞を自動で作りました（テーマ: ${r.theme}${$("#k-story").checked ? "・ストーリーあり" : "・ストーリーなし"}）`);
+  } catch (e) { toast(e.message, true); }
+}
+function kAutoClear() {
+  $$("#k-sections textarea").forEach((t) => {
+    if (t.dataset.auto !== "1") return;
+    t.value = ""; t.dataset.auto = ""; t.classList.remove("auto");
+    t.dispatchEvent(new Event("input"));
+  });
+}
+$("#k-auto").addEventListener("change", (e) => {
+  const on = e.target.checked;
+  $("#k-auto-opts").hidden = !on;   // ストーリー性などの設定は、自動生成がオンのときだけ表示
+  $("#k-auto-hint").hidden = !on;
+  $("#k-manual-hint").hidden = on;
+  if (on) kAutoFill(); else kAutoClear();
+});
+$("#k-story").addEventListener("change", kAutoFill);
+$("#k-theme").addEventListener("change", kAutoFill);
+$("#k-regen").addEventListener("click", () => { K.seed = Math.floor(Math.random() * 100000); kAutoFill(); });
 function kSection(sec) {
   const orig = sec.phrases.length ? sec.phrases : [];
   // 元の歌詞があればそのモーラ数、なければ（取り込んだ曲など）メロディのフレーズごとの音の数
-  const counts = orig.length ? orig.map((p) => p.length) : (sec.mel_phrases || []);
+  // 新しい歌詞を合わせる目安の数（元の歌詞が音符とぴったりならその区切り、違えば音符の数）
+  const counts = sec.fit_counts || (orig.length ? orig.map((p) => p.length) : (sec.mel_phrases || []));
   const origBox = h("div", { class: "k-orig" },
-    h("b", {}, `【${sec.name}】`), h("span", { class: "muted" }, ` 歌う音 ${sec.sung} 個`),
-    ...(orig.length ? orig.map((ph) => h("div", { class: "phr" }, ph.join(""), h("span", { class: "cnt" }, `${ph.length}`)))
-      : counts.map((c, k) => h("div", { class: "phr" }, `フレーズ${k + 1}`, h("span", { class: "cnt" }, `${c} 音`)))));
+    h("b", {}, `【${sec.name}】`), h("span", { class: "muted" }, ` 歌う音 ${counts.reduce((x, y) => x + y, 0) || sec.sung} 個`),
+    ...(orig.length && orig.length === counts.length && orig.every((p, k) => p.length === counts[k])
+      ? orig.map((ph) => h("div", { class: "phr" }, ph.join(""), h("span", { class: "cnt" }, `${ph.length}`)))
+      : counts.map((c, k) => h("div", { class: "phr" }, orig[k] ? orig[k].join("") : `フレーズ${k + 1}`,
+          h("span", { class: "cnt" }, `${c} 音`)))));
   const status = h("div", { class: "mora-lines" });
   const ta = h("textarea", { rows: Math.max(2, counts.length), "data-sec": sec.name,
     placeholder: counts.length ? `新しい歌詞（${counts.length} 行に分けて書くと合わせやすい。空欄ならこのパートは元のまま）` : "新しい歌詞" });
@@ -329,10 +375,13 @@ function kSection(sec) {
     if (r.phrases.length && counts.length && r.phrases.length !== counts.length)
       rows.push(h("div", { class: "warnc" }, `フレーズ数が違います（元 ${counts.length} / 新 ${r.phrases.length}）。全体で配分します。改行で揃えると自然になります`));
     const total = r.phrases.reduce((a, p) => a + p.length, 0);
-    if (total) rows.push(h("div", { class: "muted" }, `合計 ${total} モーラ（元の歌う音 ${sec.sung}）`));
+    if (total) rows.push(h("div", { class: "muted" }, `合計 ${total} モーラ（元の歌う音 ${counts.reduce((x, y) => x + y, 0) || sec.sung}）`));
     status.replaceChildren(...rows);
   }, 250);
   ta.addEventListener("input", upd);
+  ta.addEventListener("input", (e) => {  // 人が書き換えたら「自動」ではなくなる（作り直しで消さない）
+    if (e.isTrusted) { ta.dataset.auto = ""; ta.classList.remove("auto"); }
+  });
   return h("div", { class: "k-sec" }, origBox, h("div", {}, ta, status));
 }
 $("#k-song").addEventListener("change", () => { K.song = null; kLoad(); });
@@ -397,9 +446,13 @@ $("#k-go").addEventListener("click", async () => {
   if (!K.song) return;
   const lyrics = {};
   $$("#k-sections textarea").forEach((t) => { if (t.value.trim()) lyrics[t.dataset.sec] = t.value; });
-  if (!Object.keys(lyrics).length) return toast("新しい歌詞を 1 つ以上入れてください", true);
+  const auto = $("#k-auto").checked;
+  if (!auto && !Object.keys(lyrics).length)
+    return toast("新しい歌詞を 1 つ以上入れるか、「歌詞を自動で作る」にチェックを入れてください", true);
   const title = $("#k-title").value.trim() || K.song.view.title + "（替え歌）";
-  const r = await busy("替え歌を作っています…", () => api("/api/kaeuta", { yaml: K.song.yaml, lyrics, title }));
+  // 自動生成オンなら、空のパートはサーバー側で歌詞を作って埋める
+  const r = await busy("替え歌を作っています…", () =>
+    api("/api/kaeuta", { yaml: K.song.yaml, lyrics, title, auto, ...kAutoOpts() }));
   $("#k-report").textContent = r.report.join("\n");
   const panel = $("#k-report-panel");
   panel.hidden = false;

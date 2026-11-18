@@ -139,9 +139,24 @@ def api_compose(_q, b):
     return {"name": name, "yaml": text, "view": service.song_view(song)}
 
 
+def api_lyrics(_q, b):
+    """歌詞の自動生成。keep に入っているパート（手で書いた歌詞）はそのまま、ほかを作る。"""
+    from .lyricgen import THEMES
+
+    lyrics, theme = service.auto_lyrics(_load_yaml_text(b["yaml"]), bool(b.get("story", True)),
+                                        b.get("theme") or None, b.get("seed"), keep=b.get("keep") or {})
+    return {"lyrics": lyrics, "theme": theme, "themes": THEMES}
+
+
 def api_kaeuta(_q, b):
     data = _load_yaml_text(b["yaml"])
-    new, report = service.kaeuta(data, b["lyrics"], b.get("title"))
+    lyrics = dict(b.get("lyrics") or {})
+    if b.get("auto"):  # 空のパートは自動で作る
+        lyrics, _ = service.auto_lyrics(data, bool(b.get("story", True)), b.get("theme") or None,
+                                        b.get("seed"), keep=lyrics)
+    if not any((v or "").strip() for v in lyrics.values()):
+        raise ValueError("新しい歌詞を 1 つ以上入れるか、「歌詞を自動で作る」にチェックを入れてください")
+    new, report = service.kaeuta(data, lyrics, b.get("title"))
     song = song_from_dict(new)
     text = service.dump_yaml(new)
     name = service.save_song_text(b.get("name") or new["title"], text).stem
@@ -253,6 +268,7 @@ ROUTES = {
     ("POST", "/api/render"): api_render,
     ("POST", "/api/compose"): api_compose,
     ("POST", "/api/kaeuta"): api_kaeuta,
+    ("POST", "/api/lyrics"): api_lyrics,
     ("POST", "/api/mora"): api_mora,
     ("POST", "/api/chords"): api_chords,
     ("POST", "/api/import"): api_import,

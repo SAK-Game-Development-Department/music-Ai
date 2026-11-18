@@ -124,8 +124,18 @@ def cmd_kaeuta(a):
             sys.exit("歌詞ファイルは「セクション名: 歌詞」の形式で書いてください")
     elif a.section and a.lyrics is not None:
         new_lyrics = {a.section: a.lyrics}
+    elif a.auto_lyrics:
+        new_lyrics = {}
     else:
-        sys.exit("--section と --lyrics、または --lyrics-file を指定してください")
+        sys.exit("--section と --lyrics、--lyrics-file、または --auto-lyrics を指定してください")
+    if a.auto_lyrics:
+        from .service import auto_lyrics
+
+        new_lyrics, theme = auto_lyrics(data, story=not a.no_story, theme=a.theme, seed=a.seed, keep=new_lyrics)
+        print(f"歌詞を自動で作りました（テーマ: {theme}、ストーリー: {'なし' if a.no_story else 'あり'}）")
+        for sec_name, text in new_lyrics.items():
+            print(f"【{sec_name}】\n  " + text.replace("\n", "\n  "))
+        print()
     new, report = kaeuta(data, new_lyrics, a.title)
     print("\n".join(report))
     out = a.out or str(Path(a.song).with_name(Path(a.song).stem + "_kaeuta.yaml"))
@@ -190,6 +200,10 @@ def main(argv=None):
     k.add_argument("--lyrics")
     k.add_argument("--lyrics-file", help="YAML: セクション名: 新しい歌詞")
     k.add_argument("--title")
+    k.add_argument("--auto-lyrics", action="store_true", help="歌詞を自動で作る（指定した歌詞があるパートはそのまま）")
+    k.add_argument("--no-story", action="store_true", help="自動歌詞をストーリーなし（1 行ずつばらばら）にする")
+    k.add_argument("--theme", help="自動歌詞のテーマ（恋 / 友情 / 夢 / 夏 / 冬 / ごはん。省略でおまかせ）")
+    k.add_argument("--seed", type=int, help="自動歌詞の案の番号（同じ番号なら同じ歌詞）")
     k.add_argument("-o", "--out")
     k.set_defaults(func=cmd_kaeuta)
 

@@ -131,7 +131,21 @@
   </div>
   <div class="panel">
     <h2>② 新しい歌詞を書く</h2>
-    <p class="hint">元の歌詞と同じように <b>/ か改行でフレーズを区切る</b> と、息継ぎの位置が保たれます。
+    <div class="auto-row">
+      <label class="switch"><input type="checkbox" id="k-auto"> 🪄 歌詞を自動で作る</label>
+      <span id="k-auto-opts" class="auto-opts" hidden>
+        <label class="switch"><input type="checkbox" id="k-story" checked> 📖 ストーリー性をつける</label>
+        <label class="inline">テーマ
+          <select id="k-theme"><option value="">おまかせ</option></select>
+        </label>
+        <button id="k-regen" class="ghost">🎲 別の歌詞</button>
+      </span>
+    </div>
+    <p id="k-auto-hint" class="hint" hidden>
+      音の数にぴったり合う歌詞を自動で入れます。<b>ストーリーあり</b>: テーマをひとつに決めて、曲の頭から終わりへ「はじまり → 日々 → 変化 → 想い」と話が進みます。
+      <b>ストーリーなし</b>: 1 行ずつ場面がばらばらの、言葉遊びのような歌詞になります。
+      入った歌詞は自由に書き換えられます（書き換えたパートはそのまま残ります）。</p>
+    <p class="hint" id="k-manual-hint">元の歌詞と同じように <b>/ か改行でフレーズを区切る</b> と、息継ぎの位置が保たれます。
       文字数が違っても大丈夫：多ければ音符を割り、少なければ音を伸ばして合わせます。</p>
     <div id="k-sections"></div>
   </div>
