@@ -157,3 +157,49 @@ class TranscribeTest(unittest.TestCase):
             self.assertTrue((base / "output" / files["wav"]).stat().st_size > 100000)
         finally:
             service.DATA_DIR, service.SONGS_DIR, service.IMPORTS_DIR, service.OUTPUT_DIR = old
+
+
+class LyricGenTest(unittest.TestCase):
+    """歌詞の自動生成: どんな数でもモーラ数ぴったり / ストーリーは起→結へ進む / 替え歌に使える。"""
+
+    def test_exact_mora_for_any_count(self):
+        from musicai.lyricgen import THEMES, generate
+
+        counts = list(range(1, 31))
+        for story in (True, False):
+            for th in THEMES + [None]:
+                for seed in range(3):
+                    lyr, _ = generate([("A", counts)], story=story, theme=th, seed=seed)
+                    got = [len(split_mora(line)) for line in lyr["A"].split("\n")]
+                    self.assertEqual(got, counts, (story, th, seed))
+
+    def test_story_moves_from_start_to_end(self):
+        from musicai.lyricgen import BANK, GENERIC, generate
+
+        lyr, theme = generate([("A", [7] * 4), ("B", [7] * 4), ("C", [7] * 4), ("D", [7] * 4)],
+                              story=True, theme="恋", seed=1)
+        self.assertEqual(theme, "恋")
+        start = set(BANK["恋"]["起"] + GENERIC["起"])
+        end = set(BANK["恋"]["結"] + GENERIC["結"])
+        first, last = lyr["A"], lyr["D"]
+        self.assertTrue(any(w in first for w in start), first)
+        self.assertTrue(any(w in last for w in end), last)
+
+    def test_auto_kaeuta_fits_without_adjustment(self):
+        from musicai import service
+
+        data = load_song("songs/hoshi.yaml").raw
+        lyrics, _ = service.auto_lyrics(data, story=True, theme="夏", seed=2)
+        self.assertEqual(set(lyrics), {"A", "B", "A2"})
+        new, report = service.kaeuta(data, lyrics)
+        self.assertFalse([r for r in report if "△" in r or "⚠" in r], report)
+        song = song_from_dict(new)
+        self.assertEqual([w for s in song.sections.values() for w in s.warnings], [])
+
+    def test_keep_user_lyrics(self):
+        from musicai import service
+
+        data = load_song("songs/hoshi.yaml").raw
+        lyrics, _ = service.auto_lyrics(data, keep={"B": "じぶんでかいた / かしだよ"}, seed=1)
+        self.assertEqual(lyrics["B"], "じぶんでかいた / かしだよ")
+        self.assertIn("A", lyrics)

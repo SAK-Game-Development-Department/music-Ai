@@ -96,6 +96,25 @@ def cmd_migrate(a):
         sys.exit(f"{len(files)} 件中 {bad} 件を移行できませんでした")
 
 
+def cmd_export(a):
+    from .tools import EXPORT_FORMATS, ToolError, export_song_file
+
+    formats = [f.strip() for f in a.format.split(",") if f.strip()]
+    bad = [f for f in formats if f not in EXPORT_FORMATS]
+    if bad or not formats:
+        sys.exit(f"エラー: --format は {','.join(EXPORT_FORMATS)} から選んでください（{','.join(bad) or '空'}）")
+    out = Path(a.out or "output")
+    try:
+        res = export_song_file(Path(a.song), Path(a.song).stem, out, formats, a.allow_warnings)
+    except ToolError as e:
+        sys.exit(f"エラー: {e}")
+    for f, name in res["files"].items():
+        print(f"{f:<9} {out / name}")
+    if res["missing"]:
+        print("作れなかった形式: " + ", ".join(res["missing"]) + "（mp3 は ffmpeg が必要です）")
+
+
+
 def cmd_propose(a):
     from . import service
     from .proposals import Proposals
@@ -192,8 +211,18 @@ def cmd_kaeuta(a):
             sys.exit("歌詞ファイルは「セクション名: 歌詞」の形式で書いてください")
     elif a.section and a.lyrics is not None:
         new_lyrics = {a.section: a.lyrics}
+    elif a.auto_lyrics:
+        new_lyrics = {}
     else:
-        sys.exit("--section と --lyrics、または --lyrics-file を指定してください")
+        sys.exit("--section と --lyrics、--lyrics-file、または --auto-lyrics を指定してください")
+    if a.auto_lyrics:
+        from .service import auto_lyrics
+
+        new_lyrics, theme = auto_lyrics(data, story=not a.no_story, theme=a.theme, seed=a.seed, keep=new_lyrics)
+        print(f"歌詞を自動で作りました（テーマ: {theme}、ストーリー: {'なし' if a.no_story else 'あり'}）")
+        for sec_name, text in new_lyrics.items():
+            print(f"【{sec_name}】\n  " + text.replace("\n", "\n  "))
+        print()
     new, report = kaeuta(data, new_lyrics, a.title)
     print("\n".join(report))
     out = a.out or str(Path(a.song).with_name(Path(a.song).stem + "_kaeuta.yaml"))
@@ -279,6 +308,10 @@ def main(argv=None):
     k.add_argument("--lyrics")
     k.add_argument("--lyrics-file", help="YAML: セクション名: 新しい歌詞")
     k.add_argument("--title")
+    k.add_argument("--auto-lyrics", action="store_true", help="歌詞を自動で作る（指定した歌詞があるパートはそのまま）")
+    k.add_argument("--no-story", action="store_true", help="自動歌詞をストーリーなし（1 行ずつばらばら）にする")
+    k.add_argument("--theme", help="自動歌詞のテーマ（恋 / 友情 / 夢 / 夏 / 冬 / ごはん。省略でおまかせ）")
+    k.add_argument("--seed", type=int, help="自動歌詞の案の番号（同じ番号なら同じ歌詞）")
     k.add_argument("-o", "--out")
     k.set_defaults(func=cmd_kaeuta)
 

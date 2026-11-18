@@ -22,7 +22,8 @@ class MusicaiHomeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             out = self.run_py(code, MUSICAI_HOME=d).stdout.split()
             home = str(Path(d).resolve())
-            self.assertEqual(out, [home, f"{home}/songs", f"{home}/output"])
+            # 区切り文字は OS ごとに違う（Windows は \）ので Path で組み立てて比べる
+            self.assertEqual(out, [home, str(Path(home) / "songs"), str(Path(home) / "output")])
         default = self.run_py(code).stdout.split()
         self.assertEqual(default[0], str(ROOT))  # 指定しなければ、今までどおりソースのフォルダ
 
