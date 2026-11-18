@@ -15,3 +15,7 @@ __pycache__/
 dist/
 build/
 imports/
+# Nix / direnv
+result
+result-*
+.direnv/

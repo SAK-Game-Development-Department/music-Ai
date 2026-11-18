@@ -12,6 +12,7 @@ import yaml
 from .lyrics import phrases, split_mora
 from .song import Song, check_report, melody_to_text, parse_melody, save_song_dict, song_from_dict, _resolve_spec
 
+import os
 import shutil
 import sys
 
@@ -19,6 +20,10 @@ FROZEN = getattr(sys, "frozen", False)  # exe として動いているか
 # RESOURCE_DIR: 同梱ファイル（画面・サンプル曲）。DATA_DIR: 保存先（exe の隣）
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
 DATA_DIR = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent.parent
+# MUSICAI_HOME を指定すると、保存先（songs/・output/ など）をそこにできる。
+# ソースが書き込めない場所（Nix のパッケージなど）から動かすときに使う。
+if os.environ.get("MUSICAI_HOME"):
+    DATA_DIR = Path(os.environ["MUSICAI_HOME"]).expanduser().resolve()
 
 
 def _writable(d: Path) -> bool:
@@ -42,13 +47,13 @@ OUTPUT_DIR = DATA_DIR / "output"
 
 
 def ensure_data_dirs() -> None:
-    """exe 初回起動時、サンプル曲を exe の隣の songs/ にコピーする。"""
+    """初回起動時、保存先がソースと別の場所（exe の隣・MUSICAI_HOME）なら、サンプル曲を songs/ にコピーする。"""
     SONGS_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     bundled = RESOURCE_DIR / "songs"
-    if FROZEN and bundled.is_dir() and not any(SONGS_DIR.glob("*.yaml")):
+    if (FROZEN or DATA_DIR.resolve() != RESOURCE_DIR.resolve()) and bundled.is_dir() and not any(SONGS_DIR.glob("*.yaml")):
         for f in bundled.glob("*.yaml"):
-            shutil.copy2(f, SONGS_DIR / f.name)
+            shutil.copyfile(f, SONGS_DIR / f.name)  # 内容だけ（権限は引き継がない。Nix のストアは読み取り専用）
 
 
 def safe_name(name: str) -> str:

@@ -105,6 +105,26 @@ tests/   python -m unittest discover -s tests
 - 仮歌シンセは母音（あいうえお）で歌う簡易版です。歌詞をはっきり歌わせるには MusicXML を NEUTRINO / Synthesizer V などへ
 - 既存曲の替え歌を公開する場合は元曲の権利に注意。サンプルはパブリックドメインのメロディ（きらきら星）+ オリジナル歌詞です
 
+## NixOS・Nix で使う
+
+`flake.nix` があります（Nix に flakes を有効にしてください）。
+
+```bash
+nix run github:SAK-Game-Development-Department/music-Ai#app   # アプリ（ブラウザ画面）を起動
+nix run .#app                                                 # チェックアウトしたフォルダから
+nix run . -- validate songs specs                             # musicai コマンド（引数はそのまま渡る）
+nix run .#mcp                                                 # AI アプリ向けの MCP サーバ
+nix develop                                                   # 開発シェル（python -m musicai … が動く）
+nix flake check                                               # 全テストをサンドボックスで実行
+```
+
+- ffmpeg（MP3 書き出し・音声取り込み）と git（バージョン履歴）は、パッケージに含まれます
+- Nix のストアは書き込めないので、パッケージで動かすときは、曲などを `~/.local/share/music-ai/`（`MUSICAI_HOME` か `XDG_DATA_HOME` で変更可）に保存します。初回にサンプル曲がコピーされ、バージョン履歴のためにこのフォルダは Git で管理されます
+- `nix develop` ではソースのフォルダがそのまま保存先です（従来どおり）
+- demucs（ボーカル分離・任意）は、torch が大きいため含めていません。使いたい場合は `nix develop` の中で `pip install demucs` などで追加してください
+- 動作確認は x86_64-linux で行いました（aarch64 と macOS は未確認です）
+- `direnv` を使う人向けに `.envrc`（`use flake`）も置いています
+
 ## ライセンス
 
 このソフトウェア（コード・ドキュメント）は [MIT ライセンス](LICENSE) です。
