@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "musicai/song.schema.json",
+  "title": "musicai 曲ファイル (songs/*.yaml)",
+  "type": "object",
+  "required": ["schema_version", "sections"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"type": "integer", "minimum": 1, "description": "ファイル形式のバージョン。現在は 1"},
+    "_note": {"type": "string", "description": "compose が付けるメモ。無視される"},
+    "title": {"type": "string"},
+    "key": {"type": "string", "description": "例: C major / A minor"},
+    "tempo": {"type": "number", "exclusiveMinimum": 0},
+    "time": {"type": "string", "pattern": "^[0-9]+/[0-9]+$", "description": "拍子。例: 4/4"},
+    "style": {"enum": ["pop", "ballad", "rock", "simple"]},
+    "structure": {"type": "array", "items": {"type": "string"}, "description": "演奏順。sections のキーを並べる。省略時は sections の順"},
+    "sections": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"$ref": "#/$defs/section"}
+    }
+  },
+  "$defs": {
+    "section": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "chords": {"type": "string", "description": "例: C | F C | G C（| で小節区切り）"},
+        "melody": {"type": "string", "description": "音名:拍数。r=休符、~=メリスマ、|=小節線"},
+        "lyrics": {"type": "string", "description": "歌詞。1 行 = 1 フレーズ、漢字は {漢字|よみ}"},
+        "base": {"type": "string", "description": "メロディとコードを引き継ぐセクション名"},
+        "fit": {"type": "boolean", "description": "true なら歌詞のモーラ数にメロディを自動調整"},
+        "energy": {"enum": ["low", "mid", "high"]},
+        "bars": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}

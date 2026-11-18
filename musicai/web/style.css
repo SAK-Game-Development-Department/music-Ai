@@ -114,6 +114,18 @@ table.prog td:nth-child(3) { font-family: ui-monospace, Menlo, Consolas, monospa
 #toast.error { background: var(--bad); color: #fff; }
 .row.gap { flex-wrap: wrap; }
 button.chip, label.inline { white-space: nowrap; }
+
+/* バージョン（履歴） */
+.timeline { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
+.timeline li { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+.timeline li .note { font-size: 14px; }
+.dsec { margin: 8px 0 12px; }
+.dl { padding: 1px 8px; border-left: 3px solid transparent; white-space: pre-wrap; }
+.dl.same { color: var(--muted); }
+.dl.add, .dl .add { color: var(--ok); border-left-color: var(--ok); }
+.dl.remove, .dl .remove { color: var(--bad); border-left-color: var(--bad); }
+.dl.change { border-left-color: var(--warn); }
+.dl.change > div { padding-left: 5px; }
 /* 替え歌: 取り込み */
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; padding: 3px; margin-bottom: 12px; background: var(--bg); flex-wrap: wrap; }
 .seg-btn { border: 0; background: none; padding: 6px 14px; border-radius: 8px; color: var(--muted); }

@@ -1,7 +1,9 @@
 """コマンドライン: python -m musicai <command> ...
 
   render   曲ファイル → WAV / MP3 / MIDI / MusicXML / 歌詞カード
-  check    曲ファイルの検証（小節の長さ、音符数と歌詞モーラ数）
+  validate ファイル構造の検証（schemas/*.schema.json に沿っているか）
+  migrate  古い形式のファイルを最新の形式に直す（schema_version を付ける）
+  check    曲ファイルの検証（小節の長さ、音符数と歌詞モーラ数）。先に validate を行う
   compose  作曲仕様（歌詞・進行・構成）→ メロディ付きの曲ファイル
   kaeuta   既存の曲の歌詞を差し替え、メロディを自動調整した替え歌ファイルを作る
   import   YouTube の URL / 音声ファイル → 曲ファイル（テンポ・キー・コード・歌メロを推定、カラオケ音源つき）
@@ -41,9 +43,62 @@ def cmd_import(a):
     print("次: python -m musicai kaeuta songs/%s.yaml --section パート1 --lyrics \"...\"" % res["name"])
 
 
+def _expand(paths):
+    out = []
+    for x in paths:
+        p = Path(x)
+        out.extend(sorted(p.glob("*.yaml")) if p.is_dir() else [p])
+    return out
+
+
+def cmd_validate(a):
+    from .schema import validate_file
+
+    files = _expand(a.path)
+    if not files:
+        sys.exit("エラー: 対象のファイルがありません")
+    bad = 0
+    for f in files:
+        r = validate_file(f, a.kind)
+        if r.ok:
+            print(f"OK    {f}")
+        else:
+            bad += 1
+            print(f"NG    {f}\n{r.format()}")
+    if bad:
+        sys.exit(f"{len(files)} 件中 {bad} 件が不合格です（古い形式なら `python -m musicai migrate` で直せます）")
+
+
+def cmd_migrate(a):
+    from .migrate import migrate_file
+
+    files = _expand(a.path)
+    if not files:
+        sys.exit("エラー: 対象のファイルがありません")
+    bad = 0
+    for f in files:  # 1 つ失敗しても残りは続ける
+        try:
+            before, after = migrate_file(f, a.dry_run)
+        except ValueError as e:
+            bad += 1
+            print(f"失敗    {f}（{e}）")
+            continue
+        if before == after:
+            print(f"変更なし  {f}（バージョン {after}）")
+        else:
+            print(f"{'移行できます' if a.dry_run else '移行しました'}  {f}（{before} → {after}）")
+    if bad:
+        sys.exit(f"{len(files)} 件中 {bad} 件を移行できませんでした")
+
+
 def cmd_check(a):
+    from .schema import validate_file
     from .song import check_report, load_song
 
+    r = validate_file(a.song, "song")
+    if not r.ok:
+        sys.exit(f"エラー: ファイルの形式が正しくありません（{a.song}）\n{r.format()}\n"
+                 "古い形式なら `python -m musicai migrate` で直せます")
     print(check_report(load_song(a.song)))
 
 
@@ -113,6 +168,16 @@ def main(argv=None):
     c = sp.add_parser("check", help="曲ファイルを検証")
     c.add_argument("song")
     c.set_defaults(func=cmd_check)
+
+    v = sp.add_parser("validate", help="ファイル構造の検証（スキーマ）")
+    v.add_argument("path", nargs="+", help="YAML ファイル、またはフォルダ")
+    v.add_argument("--kind", choices=["song", "spec"], help="省略時は specs/ 配下かどうかなどから判断")
+    v.set_defaults(func=cmd_validate)
+
+    mg = sp.add_parser("migrate", help="古い形式のファイルを最新にする")
+    mg.add_argument("path", nargs="+", help="YAML ファイル、またはフォルダ")
+    mg.add_argument("--dry-run", action="store_true", help="書き換えずに確認だけ")
+    mg.set_defaults(func=cmd_migrate)
 
     m = sp.add_parser("compose", help="作曲仕様からメロディを自動生成")
     m.add_argument("spec")

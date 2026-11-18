@@ -38,6 +38,10 @@
 | 🎹 **編集・再生** | 伴奏付きで再生、ピアノロールと歌詞がカラオケのように進む。カラオケ版（ボーカルなし）、テンポ・アレンジ変更、MP3 / WAV / MIDI / 楽譜(MusicXML) / 歌詞のダウンロード |
 | 📖 **音楽のきほん** | 定番コード進行の一覧（キーを選ぶとコード名に変換）、曲づくりのポイント |
 
+**バージョン**（🎹 編集・再生タブ）: 「保存」は作業中の曲を上書きするだけです。節目の状態を残したいときは
+「バージョンを保存」（メモは任意）。一覧から 2 つ選ぶと、歌詞の違いが行ごとに（追加・削除・変更で）見られます。
+この機能には Git が必要です。入っていない場合やフォルダが Git 管理でない場合は「履歴機能は使えません」と表示され、ほかの機能はそのまま使えます。
+
 アプリはこのパソコンの中だけで動きます（インターネットに曲は送られません）。
 MP3 で保存するには ffmpeg が必要です（なくても WAV で再生・保存できます）。
 
@@ -49,6 +53,9 @@ pip install -r requirements.txt
 python -m musicai app                                   # アプリ起動
 python -m musicai compose specs/hajimari.yaml           # 作曲
 python -m musicai kaeuta songs/hoshi.yaml --lyrics-file lyrics/ramen.yaml -o songs/ramen.yaml
+python -m musicai validate songs specs                  # ファイル構造の検証（schemas/ に沿っているか）
+python -m musicai migrate songs specs                   # 古い形式のファイルに schema_version を付ける
+python -m musicai check songs/ramen.yaml                # 楽曲ルールの検証（先に validate も行う）
 python -m musicai render songs/ramen.yaml               # → output/ に MP3・MIDI・楽譜
 python -m musicai import "https://youtu.be/..." --start 45 --end 90   # YouTube / 音声ファイルを取り込む
 python -m musicai mora "きょうはいいてんき"              # モーラを数える
@@ -76,6 +83,9 @@ musicai/
   theory.py    音名・キー・コード・ディグリー・定番進行
   lyrics.py    歌詞 → モーラ分割（かな / {漢字|よみ} / 英語）
   song.py      曲ファイル（YAML）の読み込み・検証
+  schema.py    ファイル構造の検証（schemas/*.schema.json）
+  migrate.py   古い形式のファイルを最新にする（schema_version）
+  history.py   曲のバージョン履歴・歌詞の差分（git を使うのはここだけ）
   composer.py  歌詞 + 進行 → メロディ自動生成
   kaeuta.py    替え歌（歌詞差し替え + メロディ自動調整）
   transcribe.py 音源の聴き取り（テンポ・キー・コード・歌メロ）とカラオケ化
@@ -83,6 +93,7 @@ musicai/
   arrange.py   伴奏の自動アレンジ（pop / ballad / rock / simple）
   synth.py     音源合成（母音で歌う仮歌シンセ + 楽器）
   export.py    MIDI / MusicXML / 歌詞カード
+schemas/ 曲・作曲仕様の JSON Schema（人間・AI・CLI 共通の約束事）
 songs/   保存した曲（アプリの曲リスト）
 lyrics/  替え歌用の歌詞ファイル
 specs/   作曲仕様（歌詞・進行・構成だけ書いたもの）

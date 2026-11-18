@@ -5,6 +5,13 @@ output/
 __pycache__/
 *.pyc
 *.wav
+# 生成物（YAML から再生成できるので履歴に入れない）。examples/ のサンプルだけは残す
+*.mp3
+*.mid
+*.musicxml
+!examples/*.mp3
+!examples/*.mid
+!examples/*.musicxml
 dist/
 build/
 imports/
