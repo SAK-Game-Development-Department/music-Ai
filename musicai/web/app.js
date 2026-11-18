@@ -304,6 +304,20 @@ async function kLoad() {
   if ($("#k-auto").checked) kAutoFill();
 }
 
+// ---- 原曲の歌詞をパートに入れる ----
+$("#k-orig-go").addEventListener("click", async () => {
+  if (!K.song) return;
+  const text = $("#k-orig-text").value;
+  if (!text.trim()) return toast("原曲の歌詞を貼り付けてください", true);
+  const r = await busy("原曲の歌詞をパートに入れています…", () =>
+    api("/api/attach_lyrics", { name: K.song.name, yaml: K.song.yaml, text }));
+  $("#k-orig-report").textContent = r.report.join("\n");
+  $("#k-orig-report").hidden = false;
+  K.song = null;
+  await kLoad();
+  toast("原曲の歌詞を入れました（歌詞のないパートは間奏にしました）");
+});
+
 // ---- 歌詞の自動生成 ----
 function kSingMap() {  // パート名 → 歌うか（間奏として歌わないパートは false）
   const m = {};
@@ -358,7 +372,9 @@ function kSection(sec) {
   const origBox = h("div", { class: "k-orig" },
     h("b", {}, `【${sec.name}】`), h("span", { class: "muted" }, ` 歌う音 ${counts.reduce((x, y) => x + y, 0) || sec.sung} 個`),
     ...(orig.length && orig.length === counts.length && orig.every((p, k) => p.length === counts[k])
-      ? orig.map((ph) => h("div", { class: "phr" }, ph.join(""), h("span", { class: "cnt" }, `${ph.length}`)))
+      ? orig.map((ph, k) => h("div", { class: "phr kanji" },
+          (sec.lyrics_lines && sec.lyrics_lines.length === orig.length ? sec.lyrics_lines[k] : ph.join("")),
+          h("span", { class: "cnt" }, `${ph.length}`)))
       : counts.map((c, k) => h("div", { class: "phr" }, orig[k] ? orig[k].join("") : `フレーズ${k + 1}`,
           h("span", { class: "cnt" }, `${c} 音`)))));
   const status = h("div", { class: "mora-lines" });
@@ -436,7 +452,8 @@ $("#i-go").addEventListener("click", async () => {
   const prog = $("#i-progress"), msg = $("#i-msg"), btn = $("#i-go");
   prog.hidden = false; btn.disabled = true; $("#i-log").hidden = true;
   try {
-    const body = { start: $("#i-start").value, end: $("#i-end").value, title: $("#i-title").value };
+    const body = { start: $("#i-start").value, end: $("#i-end").value, title: $("#i-title").value,
+                   lyrics: $("#i-lyrics").value };
     if (file) {
       msg.textContent = "ファイルを送っています…";
       const up = await fetch("/api/upload", { method: "POST", headers: { "X-Filename": encodeURIComponent(file.name) }, body: file });

@@ -191,8 +191,13 @@ class LyricGenTest(unittest.TestCase):
         data = load_song("songs/hoshi.yaml").raw
         lyrics, _ = service.auto_lyrics(data, story=True, theme="夏", seed=2)
         self.assertEqual(set(lyrics), {"A", "B", "A2"})
+        # 新しい歌詞の行の長さは、原曲の歌詞と同じ（A2 の原曲は 7 + 5 モーラ）
+        for name, orig in (("A", [7, 7]), ("B", [7, 7]), ("A2", [7, 5])):
+            self.assertEqual([len(split_mora(x)) for x in lyrics[name].split("\n")], orig, name)
         new, report = service.kaeuta(data, lyrics)
-        self.assertFalse([r for r in report if "△" in r or "⚠" in r], report)
+        # 原曲の歌詞が音符とぴったりの A・B は、メロディを変えずに合う
+        a_b = report[: report.index("【A2】")]
+        self.assertFalse([r for r in a_b if "△" in r or "⚠" in r], report)
         song = song_from_dict(new)
         self.assertEqual([w for s in song.sections.values() for w in s.warnings], [])
 
@@ -276,3 +281,98 @@ class VocalDetectionTest(unittest.TestCase):
         # 歌っている小節のうち、歌と判定できた割合
         sung_bars = sum(len(s["chords"].split("|")) for s in data["sections"].values() if s.get("sing", True))
         self.assertGreaterEqual(sung_bars, 36)  # 正解は 40 小節
+
+
+class OriginalLyricsTest(unittest.TestCase):
+    """原曲の歌詞: 読み / 字幕 / 貼り付けの割り当て / 原曲をきれいに替える。"""
+
+    @classmethod
+    def setUpClass(cls):
+        import tempfile
+
+        from musicai.arrange import arrange
+        from musicai.synth import render, write_wav
+        from musicai.transcribe import analysis_to_song, analyze
+
+        cls.tmp = tempfile.TemporaryDirectory()
+        song = load_song("songs/hajimari.yaml")
+        cls.wav = f"{cls.tmp.name}/h.wav"
+        write_wav(render(arrange(song), song.tempo), cls.wav)
+        cls.data = analysis_to_song(analyze(cls.wav), "t")
+        cls.lyrics = open("tests/data/hajimari_lyrics.txt", encoding="utf-8").read()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_reading(self):
+        from musicai.reading import to_ruby
+
+        self.assertEqual(to_ruby("夜空に光る小さな星よ"), "{夜空|よぞら}に{光|ひか}る{小|ちい}さな{星|ほし}よ")
+        self.assertEqual(count_mora(to_ruby("今日は君の名前を")), 10)  # きょ・う・は・き・み・の・な・ま・え・を
+
+    def test_subtitles_parse(self):
+        from musicai.origlyrics import parse_subtitles
+
+        cues = parse_subtitles("tests/data/hajimari.ja.vtt")
+        self.assertEqual(len(cues), 20)  # [音楽] は除く
+        self.assertEqual(cues[0][2], "窓を開けたら")
+
+    def _lines(self, data):
+        from musicai.lyrics import display_lyrics
+
+        return {n: display_lyrics(s.get("lyrics", "")) for n, s in data["sections"].items()}
+
+    def test_pasted_lyrics_go_to_the_right_parts(self):
+        from musicai import service
+
+        new, _ = service.attach_original_lyrics(self.data, self.lyrics)
+        lines = self._lines(new)
+        self.assertEqual(lines["パート1"][0], "窓を開けたら")
+        self.assertEqual(lines["パート4"][0], "昨日の僕に")  # 間奏のあと
+        for name in ("イントロ", "間奏1"):
+            self.assertIs(new["sections"][name].get("sing"), False)
+            self.assertEqual(lines[name], [])
+
+    def test_subtitles_decide_interludes(self):
+        from pathlib import Path
+
+        from musicai import service
+
+        old = service.DATA_DIR, service.SONGS_DIR, service.IMPORTS_DIR, service.OUTPUT_DIR
+        base = Path(self.tmp.name) / "data"
+        service.DATA_DIR, service.SONGS_DIR, service.IMPORTS_DIR, service.OUTPUT_DIR = (
+            base, base / "songs", base / "imports", base / "output")
+        try:
+            res = service.import_song(self.wav, title="字幕", subtitles="tests/data/hajimari.ja.vtt")
+            song = load_song(base / "songs" / f"{res['name']}.yaml")
+        finally:
+            service.DATA_DIR, service.SONGS_DIR, service.IMPORTS_DIR, service.OUTPUT_DIR = old
+        sung = [n for n in song.structure if song.sections[n].sing]
+        self.assertFalse(song.sections["間奏1"].sing)
+        from musicai.lyrics import display_lyrics
+        all_lines = [ln for n in sung for ln in display_lyrics(song.sections[n].lyrics_text)]
+        self.assertEqual(len(all_lines), 20)
+
+    def test_new_lyrics_keep_the_original_shape(self):
+        from musicai import service
+        from musicai.lyrics import display_lyrics
+
+        data, _ = service.attach_original_lyrics(self.data, self.lyrics)
+        lyr, _ = service.auto_lyrics(data, theme="夏", seed=1)
+        kept = 0
+        total = 0
+        for name, text in lyr.items():
+            orig = display_lyrics(data["sections"][name]["lyrics"])
+            new = text.split("\n")
+            self.assertEqual(len(orig), len(new), name)
+            for o, n in zip(orig, new):
+                # 行の長さは原曲と同じ
+                self.assertEqual(count_mora(n), count_mora(service.to_ruby_safe(o)), (o, n))
+                total += 1
+                # 原曲の助詞（「まで」「が」など）が同じ位置に残っている行が多い
+                if any(p in o and p in n for p in ("まで", "が", "の", "を", "も")):
+                    kept += 1
+        self.assertGreaterEqual(kept / total, 0.3)
+        # 原曲でくり返す行（サビ）は、新しい歌詞も同じ
+        self.assertEqual(lyr["パート2"].split("\n")[2:], lyr["パート5"].split("\n")[2:])

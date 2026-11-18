@@ -139,6 +139,12 @@ def kaeuta(data: dict, new_lyrics: dict[str, str], title: str | None = None,
     return new, report
 
 
+def _lyrics_lines(text: str) -> list[str]:
+    from .lyrics import display_lyrics
+
+    return display_lyrics(text) if text else []
+
+
 def _mel_phrase_counts(notes) -> list[int]:
     from .kaeuta import melody_phrases
 
@@ -183,6 +189,7 @@ def song_view(song: Song) -> dict:
             "notes": notes,
             "lyrics": sec.lyrics_text,
             "phrases": lyr_phr,
+            "lyrics_lines": _lyrics_lines(sec.lyrics_text),
             "sung": sum(1 for n in sec.notes if not n.is_rest and not n.melisma),
             "mel_phrases": _mel_phrase_counts(sec.notes),
             "fit_counts": fit_counts.get(name),
@@ -274,7 +281,7 @@ IMPORTS_DIR = DATA_DIR / "imports"
 
 
 def import_song(source: str, start: float = 0.0, end: float | None = None, title: str | None = None,
-                progress=None) -> dict:
+                progress=None, subtitles: str | Path | None = None, lyrics: str | None = None) -> dict:
     """YouTube URL か音声ファイルから曲を起こして songs/ に保存。{name, title, log} を返す。"""
     import time
 
@@ -287,9 +294,13 @@ def import_song(source: str, start: float = 0.0, end: float | None = None, title
 
     work = IMPORTS_DIR / time.strftime("%Y%m%d-%H%M%S")
     work.mkdir(parents=True, exist_ok=True)
+    subs = Path(subtitles) if subtitles else None  # 歌詞の字幕ファイル（.vtt / .srt）を直接わたすこともできる
     if is_url(source):
         say("ダウンロードしています…")
         path, got_title = download_audio(source.strip(), work, progress)
+        from .audio_io import find_subtitles
+
+        subs = subs or find_subtitles(work)
     else:
         path = Path(source)
         if not path.is_file():
@@ -323,7 +334,32 @@ def import_song(source: str, start: float = 0.0, end: float | None = None, title
     original = work / "original.wav"
     save_wav(load_audio(path, 44100, start, end), original, 44100)
 
+    lyric_log: list[str] = []
+    cues = []
+    if subs is not None:
+        from .origlyrics import parse_subtitles
+
+        bar_sec = 4 * 60 / an.tempo
+        for s0, e0, text in parse_subtitles(subs):
+            s1, e1 = s0 - start, e0 - start
+            if end is not None and s1 > end - start:
+                continue
+            if e1 <= 0:
+                continue
+            cues.append(((max(0.0, s1) - an.t0) / bar_sec, (e1 - an.t0) / bar_sec, text))
+        if cues:
+            covered = [False] * an.bars
+            for b_s, b_e, _ in cues:
+                for b in range(max(0, int(b_s)), min(an.bars, int(b_e - 1e-6) + 1)):
+                    covered[b] = True
+            an.bar_vocal = covered  # 字幕の出ている小節 = 歌（音からの推定より確か）
+            lyric_log.append(f"YouTube の字幕から原曲の歌詞を {len(cues)} 行読み込みました（歌詞の出ていない所は間奏）")
     data = analysis_to_song(an, title)
+    if cues:
+        _put_cues(data, cues)
+    elif lyrics and lyrics.strip():  # 時間のない歌詞（貼り付け）
+        data, rep = attach_original_lyrics(data, lyrics)
+        lyric_log.append("貼り付けた原曲の歌詞をパートに入れました（歌詞のないパートは間奏）")
     rel = lambda p: p.relative_to(DATA_DIR).as_posix() if p.is_relative_to(DATA_DIR) else str(p)
     data["accompaniment"] = "source"
     data["source"] = {
@@ -336,7 +372,95 @@ def import_song(source: str, start: float = 0.0, end: float | None = None, title
     data = {"_note": "音源から自動で起こした曲。音符の高さ・長さは推定なので、聴き比べて直してください", **data}
     name = save_song_text(title, dump_yaml(data)).stem
     say("できました")
-    return {"name": name, "title": title, "log": an.log + (["カラオケ: demucs で分離"] if sep else ["カラオケ: 中央のボーカル帯域を弱めた簡易版"])}
+    return {"name": name, "title": title, "log": an.log + lyric_log
+            + (["カラオケ: demucs で分離"] if sep else ["カラオケ: 中央のボーカル帯域を弱めた簡易版"])}
+
+
+def to_ruby_safe(text: str) -> str:
+    """漢字の読みを {漢字|よみ} にする（読みが調べられないときはそのまま）。"""
+    from .reading import ReadingUnavailable, to_ruby
+
+    try:
+        return to_ruby(text)
+    except ReadingUnavailable:
+        return text
+
+
+def _section_bars(data: dict) -> list[tuple[str, int, int]]:
+    """[(パート名, 開始小節, 終了小節)]（構成の順）。"""
+    out, b = [], 0
+    for name in data.get("structure") or list(data["sections"]):
+        n = len([x for x in (data["sections"][name].get("chords") or "").split("|") if x.strip()]) or 1
+        out.append((name, b, b + n))
+        b += n
+    return out
+
+
+def _set_original(sec: dict, lines: list[str]) -> None:
+    """パートに原曲の歌詞を入れる（読みは自動。メロディは歌詞に合わせて自動調整）。"""
+    from .reading import ReadingUnavailable, to_ruby
+
+    try:
+        sec["lyrics"] = "\n".join(to_ruby(ln) for ln in lines)
+    except ReadingUnavailable:
+        sec["lyrics"] = "\n".join(lines)
+    sec["fit"] = True
+    sec.pop("sing", None)
+
+
+def _put_cues(data: dict, cues: list[tuple[float, float, str]]) -> None:
+    """時間つきの歌詞の行を、その時間のパートに入れる。"""
+    spans = _section_bars(data)
+    by_part: dict[str, list[str]] = {}
+    for b_s, b_e, text in cues:
+        mid = (b_s + b_e) / 2
+        for name, s, e in spans:
+            if s <= mid < e:
+                by_part.setdefault(name, []).append(text)
+                break
+    for name, lines in by_part.items():
+        sec = data["sections"][name]
+        if sec.get("melody"):
+            _set_original(sec, lines)
+
+
+def attach_original_lyrics(data: dict, text: str) -> tuple[dict, list[str]]:
+    """貼り付けた原曲の歌詞（時間なし）を、パートに順番どおり・長さが合うように入れる。
+
+    歌詞が 1 行も入らなかったパートは間奏（歌わない）にする。返り値: (新しい曲 dict, 報告)
+    """
+    from .origlyrics import assign_lines, lyric_lines
+
+    blocks = lyric_lines(text)
+    if not blocks:
+        raise ValueError("歌詞が空です")
+    new = copy.deepcopy(data)
+    song = song_from_dict(new)
+    parts = []
+    bars: list[int] = []
+    for name in dict.fromkeys(song.structure):
+        spec = _resolve_spec(name, new["sections"])
+        notes, _ = parse_melody(spec.get("melody", ""), song.beats_per_bar)
+        n = sum(1 for x in notes if not x.is_rest and not x.melisma)
+        if n:
+            parts.append((name, n, song.sections[name].sing))
+            bars.append(max(1, int(song.sections[name].length // song.beats_per_bar)))
+    if not parts:
+        raise ValueError("メロディのあるパートがありません")
+    assigned = assign_lines(parts, blocks, bars)
+    report = []
+    for name, n, _ in parts:
+        sec = new["sections"][name]
+        lines = assigned.get(name)
+        if lines:
+            _set_original(sec, lines)
+            report.append(f"【{name}】{len(lines)} 行: " + " / ".join(lines))
+        else:
+            sec["sing"] = False
+            sec.pop("lyrics", None)
+            sec.pop("fit", None)
+            report.append(f"【{name}】歌詞なし → 間奏（歌わない）")
+    return new, report
 
 
 def save_song_text(name: str, text: str) -> Path:

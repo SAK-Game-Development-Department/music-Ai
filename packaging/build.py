@@ -19,6 +19,7 @@ args = [
     # 音声のデコードに使う ffmpeg 本体（imageio-ffmpeg に同梱）と、YouTube 取得の yt-dlp
     "--collect-all", "imageio_ffmpeg",
     "--collect-submodules", "yt_dlp",
+    "--collect-all", "pykakasi",  # 原曲の歌詞（漢字）の読み
     "--exclude-module", "tkinter",
     "--distpath", str(ROOT / "dist"),
     "--workpath", str(ROOT / "build"),

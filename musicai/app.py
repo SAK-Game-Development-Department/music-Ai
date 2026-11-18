@@ -215,6 +215,14 @@ def api_compose(_q, b):
     return {"name": name, "yaml": text, "view": service.song_view(song)}
 
 
+def api_attach_lyrics(_q, b):
+    """原曲の歌詞（貼り付け）を曲のパートに入れて保存する。"""
+    data = _load_yaml_text(b["yaml"])
+    new, report = service.attach_original_lyrics(data, b.get("text", ""))
+    name = service.save_song_text(b.get("name") or new.get("title", "untitled"), service.dump_yaml(new)).stem
+    return {"name": name, "report": report}
+
+
 def api_lyrics(_q, b):
     """歌詞の自動生成。keep に入っているパート（手で書いた歌詞）はそのまま、ほかを作る。"""
     from .lyricgen import THEMES
@@ -265,7 +273,7 @@ def api_chords(_q, b):
 JOBS: dict[str, dict] = {}
 
 
-def _run_import(job_id: str, source: str, start, end, title):
+def _run_import(job_id: str, source: str, start, end, title, lyrics=None):
     job = JOBS[job_id]
 
     def progress(msg):
@@ -273,7 +281,7 @@ def _run_import(job_id: str, source: str, start, end, title):
 
     try:
         with _render_lock:
-            job["result"] = service.import_song(source, start, end, title, progress)
+            job["result"] = service.import_song(source, start, end, title, progress, lyrics=lyrics)
         job["state"] = "done"
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
@@ -310,7 +318,8 @@ def api_import(_q, b):
     end = _parse_time(b.get("end"))
     job_id = uuid.uuid4().hex[:12]
     JOBS[job_id] = {"state": "running", "message": "準備しています…"}
-    threading.Thread(target=_run_import, args=(job_id, source, start, end, b.get("title")), daemon=True).start()
+    threading.Thread(target=_run_import, args=(job_id, source, start, end, b.get("title"), b.get("lyrics")),
+                     daemon=True).start()
     return {"job": job_id}
 
 
@@ -356,6 +365,7 @@ ROUTES = {
     ("POST", "/api/compose"): api_compose,
     ("POST", "/api/kaeuta"): api_kaeuta,
     ("POST", "/api/lyrics"): api_lyrics,
+    ("POST", "/api/attach_lyrics"): api_attach_lyrics,
     ("POST", "/api/mora"): api_mora,
     ("POST", "/api/chords"): api_chords,
     ("POST", "/api/import"): api_import,
