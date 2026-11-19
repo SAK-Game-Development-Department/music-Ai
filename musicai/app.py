@@ -273,7 +273,7 @@ def api_chords(_q, b):
 JOBS: dict[str, dict] = {}
 
 
-def _run_import(job_id: str, source: str, start, end, title, lyrics=None):
+def _run_import(job_id: str, source: str, start, end, title, lyrics=None, whisper=False, whisper_model=None):
     job = JOBS[job_id]
 
     def progress(msg):
@@ -281,7 +281,8 @@ def _run_import(job_id: str, source: str, start, end, title, lyrics=None):
 
     try:
         with _render_lock:
-            job["result"] = service.import_song(source, start, end, title, progress, lyrics=lyrics)
+            job["result"] = service.import_song(source, start, end, title, progress, lyrics=lyrics,
+                                                 whisper=whisper, whisper_model=whisper_model)
         job["state"] = "done"
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
@@ -318,7 +319,8 @@ def api_import(_q, b):
     end = _parse_time(b.get("end"))
     job_id = uuid.uuid4().hex[:12]
     JOBS[job_id] = {"state": "running", "message": "準備しています…"}
-    threading.Thread(target=_run_import, args=(job_id, source, start, end, b.get("title"), b.get("lyrics")),
+    threading.Thread(target=_run_import, args=(job_id, source, start, end, b.get("title"), b.get("lyrics"),
+                                               bool(b.get("whisper")), b.get("whisper_model")),
                      daemon=True).start()
     return {"job": job_id}
 
@@ -338,7 +340,43 @@ def api_import_info(_q, _b):
         ytdlp = True
     except ImportError:
         ytdlp = not service.FROZEN  # ソース版は必要になったとき自動でインストールする
-    return {"ytdlp": ytdlp, "demucs": demucs_available()}
+    from . import asr
+
+    return {"ytdlp": ytdlp, "demucs": demucs_available(),
+            "whisper": asr.backend() or ("インストールして使う" if asr.installable() else None),
+            "whisper_models": list(asr.MODELS), "whisper_default": asr.DEFAULT_MODEL}
+
+
+def _run_resync(job_id: str, name: str, text: str, lyrics: str | None, model: str | None):
+    job = JOBS[job_id]
+
+    def progress(msg):
+        job["message"] = msg
+
+    try:
+        with _render_lock:
+            data = _load_yaml_text(text)
+            new, log = service.whisper_resync(data, lyrics, model, progress)
+            title = f"{data.get('title', name)}（Whisper）"
+            new["title"] = title
+            saved = service.save_song_text(title, service.dump_yaml(new)).stem
+        job["result"] = {"name": saved, "title": title, "log": log}
+        job["state"] = "done"
+    except Exception as e:  # noqa: BLE001
+        traceback.print_exc()
+        job["state"] = "error"
+        job["error"] = str(e)
+
+
+def api_whisper_resync(_q, b):
+    """取り込み済みの曲を、Whisper で歌詞のタイミングを合わせ直した新しい曲として保存（時間がかかるのでジョブ）。"""
+    import uuid
+
+    job_id = uuid.uuid4().hex[:12]
+    JOBS[job_id] = {"state": "running", "message": "準備しています…"}
+    threading.Thread(target=_run_resync, args=(job_id, b.get("name", ""), b["yaml"], b.get("lyrics"),
+                                               b.get("model")), daemon=True).start()
+    return {"job": job_id}
 
 
 ROUTES = {
@@ -366,6 +404,7 @@ ROUTES = {
     ("POST", "/api/kaeuta"): api_kaeuta,
     ("POST", "/api/lyrics"): api_lyrics,
     ("POST", "/api/attach_lyrics"): api_attach_lyrics,
+    ("POST", "/api/whisper_resync"): api_whisper_resync,
     ("POST", "/api/mora"): api_mora,
     ("POST", "/api/chords"): api_chords,
     ("POST", "/api/import"): api_import,

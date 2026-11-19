@@ -25,6 +25,20 @@ def selftest() -> int:
     from musicai.reading import to_ruby
 
     assert to_ruby("夜空に光る") == "{夜空|よぞら}に{光|ひか}る", "漢字の読みが使えません"
+    # Whisper（同梱されていれば）。MUSICAI_SELFTEST_WHISPER=1 なら小さいモデルで実際に聴き取る（要ネット）
+    import os
+
+    from musicai import asr
+
+    whisper = asr.backend()
+    if os.environ.get("MUSICAI_SELFTEST_WHISPER") == "1":
+        assert whisper, "Whisper が同梱されていません"
+        import numpy as np
+
+        t = np.arange(16000 * 3) / 16000
+        tone = (0.2 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
+        segs = asr.transcribe(tone, "tiny")
+        print("WHISPER OK", whisper, len(segs), "segments")
     print("SELFTEST OK", files, "->", service.OUTPUT_DIR, "| import:", res["log"][-2])
     return 0
 

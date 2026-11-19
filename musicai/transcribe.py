@@ -516,6 +516,27 @@ def analyze(path: str | Path, start: float = 0.0, end: float | None = None, voca
                     f0=midi, log=log, bar_vocal=bar_vocal)
 
 
+def vocal_focus(path: str | Path, start: float = 0.0, end: float | None = None, vocals: Path | None = None,
+                sr: int = 16000) -> np.ndarray:
+    """Whisper に聞かせる、歌を強調したモノラル音声（16kHz）。
+
+    demucs のボーカルがあればそれ。なければステレオの「真ん中」の成分（ボーカルはふつう真ん中）を
+    残し、低音（ベース・キック）と高すぎる音を弱める（カラオケ化の逆）。
+    """
+    if vocals is not None:
+        return load_audio(vocals, sr, start, end, channels=1)[0]
+    x = load_audio(path, sr, start, end, channels=2)
+    L, R = x[0], x[1]
+    n_fft, hop = 1024, 256
+    XL, XR = stft(L, n_fft, hop), stft(R, n_fft, hop)
+    sim = np.clip(1 - np.abs(XL - XR) / (np.abs(XL) + np.abs(XR) + 1e-9), 0, 1)
+    freqs = np.arange(XL.shape[0]) * sr / n_fft
+    band = ((freqs > 120) & (freqs < 7000)).astype(float)[:, None]
+    y = istft((XL + XR) * 0.5 * band * sim ** 2, n_fft, hop, len(L))
+    peak = float(np.abs(y).max()) or 1.0
+    return (y / peak * 0.9).astype(np.float32)
+
+
 def make_karaoke(path: str | Path, out: Path, start: float = 0.0, end: float | None = None, sr: int = 44100) -> Path:
     """中央のボーカル帯域を弱めた簡易カラオケ音源を作る。"""
     x = load_audio(path, sr, start, end, channels=2)

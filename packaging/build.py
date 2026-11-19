@@ -28,6 +28,13 @@ args = [
 ]
 print(" ".join(args))
 try:
+    import faster_whisper  # noqa: F401  Whisper（歌詞とタイミングの聴き取り）
+
+    args[-1:-1] = ["--collect-all", "faster_whisper", "--collect-all", "ctranslate2", "--collect-all", "av",
+                   "--collect-all", "tokenizers", "--hidden-import", "huggingface_hub"]
+except ImportError:
+    print("faster-whisper が入っていないので、Whisper なしでビルドします")
+try:
     import yt_dlp_ejs  # noqa: F401  YouTube の署名解決スクリプト（yt-dlp[default] に含まれる）
 
     args[-1:-1] = ["--collect-all", "yt_dlp_ejs"]

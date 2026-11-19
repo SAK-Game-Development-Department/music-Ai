@@ -318,6 +318,34 @@ $("#k-orig-go").addEventListener("click", async () => {
   toast("原曲の歌詞を入れました（歌詞のないパートは間奏にしました）");
 });
 
+// ---- Whisper でタイミングを合わせ直す（取り込み済みの曲）----
+async function waitJob(job, onMsg) {
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const st = await api("/api/job?id=" + job);
+    onMsg(st.message || "");
+    if (st.state === "error") throw new Error(st.error);
+    if (st.state !== "running") return st.result;
+  }
+}
+$("#k-whisper-go").addEventListener("click", async () => {
+  if (!K.song) return;
+  if (!K.song.view.source) return toast("YouTube・音声ファイルから取り込んだ曲で使えます", true);
+  const { job } = await api("/api/whisper_resync", { name: K.song.name, yaml: K.song.yaml,
+    lyrics: $("#k-orig-text").value, model: $("#i-whisper-model").value || undefined });
+  $("#busy-msg").textContent = "Whisper で聴き取っています…"; $("#busy").hidden = false;
+  try {
+    const res = await waitJob(job, (m) => { $("#busy-msg").textContent = m || "Whisper で聴き取っています…"; });
+    $("#k-orig-report").textContent = "✓ 「" + res.title + "」として保存しました\n" + res.log.join("\n");
+    $("#k-orig-report").hidden = false;
+    await refreshSongs();
+    $("#k-song").value = res.name;
+    K.song = null;
+    await kLoad();
+    toast("Whisper でタイミングを合わせ直しました");
+  } catch (e) { toast(e.message, true); } finally { $("#busy").hidden = true; }
+});
+
 // ---- 歌詞の自動生成 ----
 function kSingMap() {  // パート名 → 歌うか（間奏として歌わないパートは false）
   const m = {};
@@ -441,6 +469,17 @@ async function importInfo() {
     const r = await api("/api/import_info");
     $("#i-info").textContent = (r.demucs ? " ✓ 高精度のボーカル分離（demucs）が使えます。" : "")
       + (r.ytdlp ? "" : " ※ YouTube の取得には yt-dlp が必要です（音声ファイルは使えます）。");
+    const sel = $("#i-whisper-model");
+    if (!sel.options.length) {
+      const sizes = { tiny: "とても速い・粗い", base: "速い", small: "おすすめ", medium: "正確・遅い", "large-v3": "いちばん正確・とても遅い" };
+      for (const m of r.whisper_models) sel.append(h("option", { value: m }, `${m}（${sizes[m] || ""}）`));
+      sel.value = r.whisper_default;
+    }
+    $("#i-whisper").disabled = !r.whisper;
+    if (!r.whisper) $("#i-whisper").checked = false;
+    $("#i-whisper-info").textContent = !r.whisper ? "このアプリでは使えません"
+      : r.whisper === "インストールして使う" ? "初回は Whisper のインストールとモデルのダウンロードがあります（数分）"
+      : "初回はモデルのダウンロードがあります";
   } catch { /* 無視 */ }
 }
 $("#i-url").addEventListener("input", () => { if ($("#i-url").value) $("#i-file").value = ""; });
@@ -453,7 +492,7 @@ $("#i-go").addEventListener("click", async () => {
   prog.hidden = false; btn.disabled = true; $("#i-log").hidden = true;
   try {
     const body = { start: $("#i-start").value, end: $("#i-end").value, title: $("#i-title").value,
-                   lyrics: $("#i-lyrics").value };
+                   lyrics: $("#i-lyrics").value, whisper: $("#i-whisper").checked, whisper_model: $("#i-whisper-model").value };
     if (file) {
       msg.textContent = "ファイルを送っています…";
       const up = await fetch("/api/upload", { method: "POST", headers: { "X-Filename": encodeURIComponent(file.name) }, body: file });
