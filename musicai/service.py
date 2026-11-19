@@ -281,7 +281,8 @@ IMPORTS_DIR = DATA_DIR / "imports"
 
 
 def import_song(source: str, start: float = 0.0, end: float | None = None, title: str | None = None,
-                progress=None, subtitles: str | Path | None = None, lyrics: str | None = None) -> dict:
+                progress=None, subtitles: str | Path | None = None, lyrics: str | None = None,
+                whisper: bool = False, whisper_model: str | None = None) -> dict:
     """YouTube URL か音声ファイルから曲を起こして songs/ に保存。{name, title, log} を返す。"""
     import time
 
@@ -354,12 +355,22 @@ def import_song(source: str, start: float = 0.0, end: float | None = None, title
                     covered[b] = True
             an.bar_vocal = covered  # 字幕の出ている小節 = 歌（音からの推定より確か）
             lyric_log.append(f"YouTube の字幕から原曲の歌詞を {len(cues)} 行読み込みました（歌詞の出ていない所は間奏）")
-    data = analysis_to_song(an, title)
-    if cues:
-        _put_cues(data, cues)
-    elif lyrics and lyrics.strip():  # 時間のない歌詞（貼り付け）
-        data, rep = attach_original_lyrics(data, lyrics)
-        lyric_log.append("貼り付けた原曲の歌詞をパートに入れました（歌詞のないパートは間奏）")
+    data = None
+    if whisper:  # Whisper で、歌詞と「どのタイミングで歌っているか」を聴き取る
+        known = [c[2] for c in cues] if cues else None
+        if lyrics and lyrics.strip():
+            from .origlyrics import lyric_lines
+
+            known = [ln for b in lyric_lines(lyrics) for ln in b]
+        data, wlog = _whisper_song(an, title, path, start, end, vocals, known, whisper_model, say)
+        lyric_log += wlog
+    if data is None:
+        data = analysis_to_song(an, title)
+        if cues:
+            _put_cues(data, cues)
+        elif lyrics and lyrics.strip():  # 時間のない歌詞（貼り付け）
+            data, rep = attach_original_lyrics(data, lyrics)
+            lyric_log.append("貼り付けた原曲の歌詞をパートに入れました（歌詞のないパートは間奏）")
     rel = lambda p: p.relative_to(DATA_DIR).as_posix() if p.is_relative_to(DATA_DIR) else str(p)
     data["accompaniment"] = "source"
     data["source"] = {
@@ -384,6 +395,73 @@ def to_ruby_safe(text: str) -> str:
         return to_ruby(text)
     except ReadingUnavailable:
         return text
+
+
+def _whisper_song(an, title, path, start, end, vocals, known_lines, model, say) -> tuple[dict | None, list[str]]:
+    """Whisper で歌詞の時刻を聴き取り、その時刻に音符を置いた曲 dict を作る。失敗したら (None, 理由)。"""
+    from . import asr
+    from .lyricsync import align_known, build_song, lines_from_asr
+    from .transcribe import vocal_focus
+
+    try:
+        audio = vocal_focus(path, start, end, vocals)
+        prompt = "".join(known_lines) if known_lines else None
+        segs = asr.transcribe(audio, model or asr.DEFAULT_MODEL, prompt=prompt, progress=say)
+    except asr.AsrUnavailable as e:
+        return None, [f"Whisper は使えませんでした（{e}）。音からの推定で作りました"]
+    except Exception as e:  # noqa: BLE001  モデルのダウンロード失敗など
+        return None, [f"Whisper で聴き取れませんでした（{str(e)[:120]}）。音からの推定で作りました"]
+    if not segs:
+        return None, ["Whisper で歌詞が聴き取れませんでした。音からの推定で作りました"]
+    log = []
+    timed = align_known(known_lines, segs) if known_lines else None
+    if timed:
+        hit = sum(t.matched * len(t.mora) for t in timed) / max(1, sum(len(t.mora) for t in timed))
+        log.append(f"Whisper で原曲の歌詞 {len(timed)} 行の歌い出しのタイミングを合わせました"
+                   f"（Whisper の聴き取りと一致したモーラ {hit:.0%}）")
+    else:
+        if known_lines:
+            log.append("原曲の歌詞と Whisper の聴き取りがほとんど一致しなかったので、聴き取った歌詞を使いました")
+        timed = lines_from_asr(segs)
+        if not timed:
+            return None, ["Whisper で歌詞が聴き取れませんでした。音からの推定で作りました"]
+        log.append(f"Whisper で歌詞を {len(timed)} 行聴き取りました（例:「{timed[0].text}」）。違う所は曲データで直せます")
+    try:
+        return build_song(an, title, timed), log
+    except ValueError as e:
+        return None, log + [f"タイミングを合わせられませんでした（{e}）。音からの推定で作りました"]
+
+
+def whisper_resync(data: dict, lyrics: str | None = None, model: str | None = None, progress=None) -> tuple[dict, list[str]]:
+    """取り込み済みの曲を、元の音源から Whisper で歌詞のタイミングを合わせ直した新しい曲 dict にする。
+
+    lyrics（原曲の歌詞）を渡さなければ、曲に入っている原曲の歌詞を使う。
+    """
+    from .lyrics import display_lyrics
+    from .transcribe import analyze
+
+    src = source_info(song_from_dict(data))
+    if not src or not src.get("original") or not Path(src["original"]).is_file():
+        raise ValueError("この曲には元の音源がありません（YouTube・音声ファイルから取り込んだ曲で使えます）")
+    say = progress or (lambda m: None)
+    if lyrics and lyrics.strip():
+        from .origlyrics import lyric_lines
+
+        known = [ln for b in lyric_lines(lyrics) for ln in b]
+    else:
+        song = song_from_dict(data)
+        known = [ln for n in dict.fromkeys(song.structure) for ln in display_lyrics(song.sections[n].lyrics_text or "")
+                 if song.sections[n].sing] or None
+    an = analyze(src["original"], progress=progress)
+    new, log = _whisper_song(an, data.get("title", "untitled"), Path(src["original"]), 0.0, None, None, known,
+                             model, say)
+    if new is None:
+        raise ValueError(" ".join(log))
+    for k in ("accompaniment", "source"):
+        if k in data:
+            new[k] = copy.deepcopy(data[k])
+    new["source"]["offset"] = round(float(an.t0), 4)  # 元の音源（範囲で切ったもの）の中で 1 小節目が始まる秒
+    return new, log
 
 
 def _section_bars(data: dict) -> list[tuple[str, int, int]]:

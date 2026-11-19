@@ -376,3 +376,96 @@ class OriginalLyricsTest(unittest.TestCase):
         self.assertGreaterEqual(kept / total, 0.3)
         # 原曲でくり返す行（サビ）は、新しい歌詞も同じ
         self.assertEqual(lyr["パート2"].split("\n")[2:], lyr["パート5"].split("\n")[2:])
+
+
+class WhisperSyncTest(unittest.TestCase):
+    """Whisper の聴き取り（ここでは正解の時刻から作ったにせもの）で、歌い出しのタイミングに音符を合わせる。"""
+
+    @classmethod
+    def setUpClass(cls):
+        import sys
+        import tempfile
+
+        from musicai.arrange import arrange
+        from musicai.synth import render, write_wav
+        from musicai.transcribe import analyze
+
+        sys.path.insert(0, "tests")
+        import fake_whisper
+
+        cls.fw = fake_whisper
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.song = load_song("songs/hajimari.yaml")
+        cls.wav = f"{cls.tmp.name}/h.wav"
+        write_wav(render(arrange(cls.song), cls.song.tempo), cls.wav)
+        cls.an = analyze(cls.wav)
+        from pathlib import Path
+        cls.lines = [ln for ln in Path("tests/data/hajimari_lyrics.txt").read_text(encoding="utf-8").split("\n") if ln.strip()]
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def _onsets(self, song):
+        spb = 60 / self.an.tempo
+        out = []
+        for st, sec in song.timeline():
+            if not sec.sing:
+                continue
+            t = float(st) * spb
+            for n in sec.notes:
+                if not n.is_rest:
+                    out.append(self.an.t0 + t)
+                t += float(n.dur) * spb
+        return out
+
+    def test_notes_land_on_the_sung_timing(self):
+        import numpy as np
+
+        from musicai.lyricsync import align_known, build_song
+
+        segs, truth = self.fw.fake(self.song, self.lines, seed=1, jitter=0.1, err=0.15, drop=0.08)
+        timed = align_known(self.lines, segs)
+        song = song_from_dict(build_song(self.an, "t", timed))
+        est = self._onsets(song)
+        flat = [t for line in truth for t in line]
+        self.assertEqual(len(est), len(flat))  # 歌詞 1 モーラ = 音符 1 つ
+        err = np.abs(np.array(est) - np.array(flat))
+        self.assertLess(float(np.median(err)), 0.06)  # 歌い出しの誤差（中央値）
+        sung = [n for n in song.structure if song.sections[n].sing]
+        self.assertFalse(song.sections["イントロ"].sing)
+        self.assertTrue(any(n.startswith("間奏") for n in song.structure))
+        for n in sung:  # 各パートの音符の数 = 歌詞のモーラ数（調整なしでぴったり）
+            sec = song.sections[n]
+            self.assertEqual(sum(1 for x in sec.notes if not x.is_rest), count_mora(sec.lyrics_text), n)
+
+    def test_import_with_whisper_and_fallback(self):
+        from pathlib import Path
+        from unittest import mock
+
+        from musicai import asr, service
+
+        old = service.DATA_DIR, service.SONGS_DIR, service.IMPORTS_DIR, service.OUTPUT_DIR
+        base = Path(self.tmp.name) / "data"
+        service.DATA_DIR, service.SONGS_DIR, service.IMPORTS_DIR, service.OUTPUT_DIR = (
+            base, base / "songs", base / "imports", base / "output")
+        segs, _ = self.fw.fake(self.song, self.lines, seed=2)
+        try:
+            with mock.patch.object(asr, "transcribe", return_value=segs) as tr:
+                res = service.import_song(self.wav, title="W", lyrics="\n".join(self.lines), whisper=True)
+                self.assertIn("窓を開けたら", tr.call_args.kwargs.get("prompt", ""))  # 原曲の歌詞をヒントに渡す
+            self.assertTrue(any("タイミング" in x for x in res["log"]), res["log"])
+            song = load_song(base / "songs" / f"{res['name']}.yaml")
+            self.assertEqual(sum(count_mora(s.lyrics_text) for s in song.sections.values() if s.sing),
+                             sum(count_mora(service.to_ruby_safe(x)) for x in self.lines))
+            # 歌詞なし: Whisper の聴き取りをそのまま歌詞に
+            with mock.patch.object(asr, "transcribe", return_value=segs):
+                res2 = service.import_song(self.wav, title="W2", whisper=True)
+            self.assertTrue(any("聴き取りました" in x for x in res2["log"]), res2["log"])
+            # Whisper が使えないとき: これまでの方法で作る
+            with mock.patch.object(asr, "transcribe", side_effect=asr.AsrUnavailable("なし")):
+                res3 = service.import_song(self.wav, title="W3", whisper=True)
+            self.assertTrue(any("使えませんでした" in x for x in res3["log"]), res3["log"])
+            self.assertTrue((base / "songs" / f"{res3['name']}.yaml").is_file())
+        finally:
+            service.DATA_DIR, service.SONGS_DIR, service.IMPORTS_DIR, service.OUTPUT_DIR = old

@@ -1,0 +1,3 @@
+-r ../requirements.txt
+# アプリ（exe など）に同梱するもの
+faster-whisper>=1.0

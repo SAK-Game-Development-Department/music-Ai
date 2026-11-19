@@ -125,6 +125,11 @@
         テンポ・キー・コード・歌メロを自動で聴き取り、ボーカルを弱めたカラオケ音源も作ります。<span id="i-info"></span></p>
       <p class="hint notice">⚠ 聴き取りは自動推定なので、音の高さや長さが一部ずれます。「編集・再生」で元の音源と聴き比べて直せます。
         取り込んだ曲・替え歌は <b>個人で楽しむ範囲</b> で使ってください。公開する場合は元の曲の権利者の許諾が必要です。YouTube の利用規約にも従ってください。</p>
+      <div class="whisper-row">
+        <label class="switch"><input type="checkbox" id="i-whisper" checked> 🎙 Whisper で歌詞と歌い出しのタイミングを聴き取る（おすすめ）</label>
+        <label class="inline">モデル <select id="i-whisper-model"></select></label>
+        <span id="i-whisper-info" class="muted"></span>
+      </div>
       <details class="orig-paste">
         <summary>📝 原曲の歌詞（任意）— わかれば貼り付けてください</summary>
         <p class="hint">YouTube に<b>歌詞の字幕</b>があれば自動で使います（字幕の出ている所 = 歌、出ていない所 = 間奏）。
@@ -159,7 +164,11 @@
       <p class="hint">原曲の歌詞を 1 行 = 1 フレーズで貼り付けて「パートに入れる」を押すと、歌のパートに順番どおり・長さが合うように入れます。
         歌詞が 1 行も入らなかったパートは間奏（歌わない）になります。漢字のままで大丈夫です（読みは自動。違っていたら直せます）。</p>
       <textarea id="k-orig-text" rows="8"></textarea>
-      <div class="row gap"><span class="spacer"></span><button id="k-orig-go" class="ghost">📥 パートに入れる</button></div>
+      <div class="row gap wrap"><span class="spacer"></span>
+        <button id="k-whisper-go" class="ghost" title="元の音源を Whisper で聴き取って、歌詞の 1 文字ずつの歌い出しに音符を合わせ直します（新しい曲として保存）">🎙 Whisper でタイミングを合わせ直す</button>
+        <button id="k-orig-go" class="ghost">📥 パートに入れる</button></div>
+      <p class="hint">「Whisper でタイミングを合わせ直す」は、上に貼った歌詞（空なら曲に入っている原曲の歌詞）を、元の音源の歌声に合わせて、
+        どこでどのタイミングで歌い始めているかを聴き取り直します。結果は「（Whisper）」の付いた新しい曲として保存します。</p>
       <pre id="k-orig-report" hidden></pre>
     </details>
     <div id="k-sections"></div>

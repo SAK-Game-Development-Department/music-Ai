@@ -105,6 +105,9 @@ musicai/
   lyricgen.py  歌詞の自動生成（音の数ぴったり・テーマ・ストーリー）
   transcribe.py 音源の聴き取り（テンポ・キー・コード・歌メロ）とカラオケ化
   audio_io.py  音声の読み書き（ffmpeg）と YouTube 取得（yt-dlp）
+  asr.py       Whisper（faster-whisper / openai-whisper）で歌詞と時刻を聴き取る
+  lyricsync.py 原曲の歌詞のモーラごとの歌い出しの時刻を決めて、その時刻に音符を置く
+  origlyrics.py / reading.py  原曲の歌詞（字幕・貼り付け）と、漢字の読み
   arrange.py   伴奏の自動アレンジ（pop / ballad / rock / simple）
   synth.py     音源合成（母音で歌う仮歌シンセ + 楽器）
   export.py    MIDI / MusicXML / 歌詞カード
