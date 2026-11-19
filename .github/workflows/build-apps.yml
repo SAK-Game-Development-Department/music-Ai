@@ -64,6 +64,7 @@ jobs:
 
       - name: Self test (built app renders a song)
         shell: bash
+        timeout-minutes: 15
         env:
           MUSICAI_SELFTEST_WHISPER: "1"   # 同梱した Whisper で、小さいモデルを使って実際に聴き取る
         run: |
